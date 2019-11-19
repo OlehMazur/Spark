@@ -71,7 +71,9 @@ for i in file_list:
 dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
 dbutils.fs.rm(readPath , recurse= True)
 
-dbutils.notebook.exit(("it takes %s seconds to get weather forecast ") % (t2 - t1))
+message = ('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60) , ( " count of rows " + str(df.shape[0]) ) , (  " count of apparentTemperatureMax " +  str(df['apparentTemperatureMax'].count())  ), (  " count of cloudCover " +  str(df['cloudCover'].count())  ), (  " count of humidity " +  str(df['humidity'].count())  ), (  " count of windSpeed " +  str(df['windSpeed'].count())  )
+
+dbutils.notebook.exit( message )
 
 
 # COMMAND ----------
@@ -81,7 +83,3 @@ dbutils.notebook.exit(("it takes %s seconds to get weather forecast ") % (t2 - t
 # for i in file_list:
 #    if i[1]. 
 #      print(read_name)    
-
-# COMMAND ----------
-
-#test
