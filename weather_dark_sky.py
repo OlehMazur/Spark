@@ -81,3 +81,7 @@ dbutils.notebook.exit(("it takes %s seconds to get weather forecast ") % (t2 - t
 # for i in file_list:
 #    if i[1]. 
 #      print(read_name)    
+
+# COMMAND ----------
+
+#test
