@@ -16,6 +16,10 @@ val fname = "weather_ru.csv"
 
 // COMMAND ----------
 
+val year_list : Seq[String] = ("2016","2017","2018","2019","2020")
+
+// COMMAND ----------
+
 val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Plant_City.csv"
 val file_type = "csv"
 val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
@@ -49,7 +53,7 @@ city_list.collect.foreach {
                              0, 
                              Map(
                                  "City" -> x.toString().replace("[", "").replace("]", ""),
-                                 "Year" -> "2018",
+                                 "Year" -> "2017",
                                  "API_Key" -> "d4b20ef8a9ad8bcf2449be822fba03a4",
                                  "CONTAINER_NAME"  -> "prod"     
                                 )
@@ -71,30 +75,32 @@ import org.apache.spark.sql.types.{StructType,StructField,StringType}
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.functions.expr
 
-val schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed,city,date"
-val schema_rdd = StructType(schema_string.split(",").map(fieldName => StructField(fieldName, StringType, true)) )
-var empty_df = sqlContext.createDataFrame(sc.emptyRDD[Row], schema_rdd)
+val schema_year = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed,city,date"
+val schema_rdd_year = StructType(schema_year.split(",").map(fieldName => StructField(fieldName, StringType, true)) )
+var result_df = sqlContext.createDataFrame(sc.emptyRDD[Row], schema_rdd_year)
 
-val name : String = "2019"   
-val file_list : Seq[String] = dbutils.fs.ls(SearchPath).map(_.path).filter(_.contains(name))
-for (file <- file_list)  {
-  val file_list : Seq[String] = dbutils.fs.ls(file).map(_.path).filter(_.contains(name)) 
-  var city = file_list(0).replace(file, "").replace("weather_", "").replace("_"+name + ".csv", "") 
-  var file_location = file + file_list(0).replace(file, "")
-  var dff = spark.read.format(file_type).option("delimiter", ";").option("header", "true").load(file_location).select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
-  var empty_df_city_date = dff.withColumn("city", lit(city)).withColumn("date", expr("from_unixtime(time ,'YYYY-MM-dd')"))
+for year <- year_list {
+
+  val schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed,city,date"
+  val schema_rdd = StructType(schema_string.split(",").map(fieldName => StructField(fieldName, StringType, true)) )
+  var empty_df = sqlContext.createDataFrame(sc.emptyRDD[Row], schema_rdd)
+
+  val name : String = year  
+  val file_list : Seq[String] = dbutils.fs.ls(SearchPath).map(_.path).filter(_.contains(name))
+  for (file <- file_list)  {
+    val file_list : Seq[String] = dbutils.fs.ls(file).map(_.path).filter(_.contains(name)) 
+    var city = file_list(0).replace(file, "").replace("weather_", "").replace("_"+name + ".csv", "") 
+    var file_location = file + file_list(0).replace(file, "")
+    var dff = spark.read.format(file_type).option("delimiter", ";").option("header", "true").load(file_location).select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
+    var empty_df_city_date = dff.withColumn("city", lit(city)).withColumn("date", expr("from_unixtime(time ,'YYYY-MM-dd')"))
+
+    empty_df = empty_df.union(empty_df_city_date)
+  }
   
-  empty_df = empty_df.union(empty_df_city_date)
-}
+  result_df = result_df.union(empty_df)
 
-//empty_df.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
-
-// val name_ : String = "part-00000"  
-// val file_list_ : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name_))
-// val read_name = if (file_list_.length >= 1 ) file_list_(0).replace(readPath + "/", "") 
-// dbutils.fs.mv(readPath+"/"+read_name , result+"/"+fname)   
-// dbutils.fs.rm(readPath , recurse = true) 
-empty_df.createOrReplaceTempView("main")
+}  
+result_df.createOrReplaceTempView("main")
 
 
 // COMMAND ----------
