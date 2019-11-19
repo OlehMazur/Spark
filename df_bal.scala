@@ -591,10 +591,6 @@ df.createOrReplaceTempView("hfa_201940")
 
 // COMMAND ----------
 
-
-
-// COMMAND ----------
-
 // MAGIC %sql 
 // MAGIC select *
 // MAGIC from oo 
