@@ -23,6 +23,7 @@ from geopy.geocoders import Nominatim
 # COMMAND ----------
 
  #main params
+message = ""  
 city = dbutils.widgets.get('City')
 year = int(dbutils.widgets.get('Year'))
     
@@ -56,24 +57,27 @@ for offset in range(0, days_in_year):
          
 t2=time.time()  
 print(("it takes %s seconds to get weather forecast ") % (t2 - t1)) 
-      
-df = pd.DataFrame(data)   
-df_s = spark.createDataFrame(df)
 
-#save to blob storage
-readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
-writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
-fname = "weather_" + city + '_' + str(year)+ ".csv"
-df_s.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
+if (len(data) > 0) :     
+  df = pd.DataFrame(data)   
+  df_s = spark.createDataFrame(df)
 
-file_list = dbutils.fs.ls(readPath)
-for i in file_list:
-  if i[1].startswith("part-00000"):  
-    read_name = i[1]
-dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
-dbutils.fs.rm(readPath , recurse= True)
+  #save to blob storage
+  readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+  writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
+  fname = "weather_" + city + '_' + str(year)+ ".csv"
+  df_s.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
 
-message = ('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60) , ( " count of rows " + str(df.shape[0]) ) , (  " count of apparentTemperatureMax " +  str(df['apparentTemperatureMax'].count())  ), (  " count of cloudCover " +  str(df['cloudCover'].count())  ), (  " count of humidity " +  str(df['humidity'].count())  ), (  " count of windSpeed " +  str(df['windSpeed'].count())  )
+  file_list = dbutils.fs.ls(readPath)
+  for i in file_list:
+    if i[1].startswith("part-00000"):  
+      read_name = i[1]
+  dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
+  dbutils.fs.rm(readPath , recurse= True)
+
+  message = ('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60) , ( " count of rows " + str(df.shape[0]) ) , (  " count of apparentTemperatureMax " +  str(df['apparentTemperatureMax'].count())  ), (  " count of cloudCover " +  str(df['cloudCover'].count())  ), (  " count of humidity " +  str(df['humidity'].count())  ), (  " count of windSpeed " +  str(df['windSpeed'].count())  )
+else: 
+  message = str(city) + " there is no data for the city"
 
 dbutils.notebook.exit( message )
 
