@@ -45,15 +45,18 @@ city_plant.createOrReplaceTempView("city_plant")
 // COMMAND ----------
 
 city_list.collect.foreach {
- (x) => dbutils.notebook.run("weather_dark_sky", 
+ (x) => { val status = dbutils.notebook.run("weather_dark_sky", 
                              0, 
                              Map(
                                  "City" -> x.toString().replace("[", "").replace("]", ""),
-                                 "Year" -> "2019",
+                                 "Year" -> "2018",
                                  "API_Key" -> "d4b20ef8a9ad8bcf2449be822fba03a4",
                                  "CONTAINER_NAME"  -> "prod"     
                                 )
-                            )      
+                            ) 
+                println(status)
+                }
+  
 }
 
 // COMMAND ----------
