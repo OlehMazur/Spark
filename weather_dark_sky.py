@@ -17,6 +17,7 @@ import datetime
 import calendar
 import time
 import pandas as pd
+import geopy.geocoders
 from geopy.geocoders import Nominatim
 
 # COMMAND ----------
@@ -33,6 +34,7 @@ STORAGEACCOUNTNAME= 'staeeprodbigdataml2c'
 STORAGEACCOUNTKEY= 'EHYumrwso4XLSUHpvLptI33z7mumiZwZOErjrlP8FiW51Bb6NS2PaWJsqW9hsMttbZizgQjUexFZfZDBQJebYw==' 
 CONTAINERNAME= 'prod' if dbutils.widgets.get('CONTAINER_NAME') == '' else dbutils.widgets.get('CONTAINER_NAME')
 
+geopy.geocoders.options.default_timeout = None
 geolocator = Nominatim(user_agent="get lat and long")
 location = geolocator.geocode(city)
 
