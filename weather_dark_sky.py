@@ -75,7 +75,8 @@ if (len(data) > 0) :
   dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
   dbutils.fs.rm(readPath , recurse= True)
 
-  message = ('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60) , ( " count of rows " + str(df.shape[0]) ) , (  " count of apparentTemperatureMax " +  str(df['apparentTemperatureMax'].count())  ), (  " count of cloudCover " +  str(df['cloudCover'].count())  ), (  " count of humidity " +  str(df['humidity'].count())  ), (  " count of windSpeed " +  str(df['windSpeed'].count())  )
+  message = ('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)
+  #('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60) , ( " count of rows " + str(df.shape[0]) ) , (  " count of apparentTemperatureMax " +  str(df['apparentTemperatureMax'].count())  ), (  " count of cloudCover " +  str(df['cloudCover'].count())  ), (  " count of humidity " +  str(df['humidity'].count())  ), (  " count of windSpeed " +  str(df['windSpeed'].count())  )
 else: 
   message = str(city) + " there is no data for the city"
 
