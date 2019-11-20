@@ -77,7 +77,7 @@ df.createOrReplaceTempView("Calendar")
 // COMMAND ----------
 
 val export_delimiter = Character.toString(7.toChar)
-val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/InDirect_Product2.csv"
+val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/InDirect_Product.csv"
 val file_type = "csv"
 val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", export_delimiter).option("header", "true").load(file_location)
 df.createOrReplaceTempView("IndirectSales")
@@ -88,7 +88,7 @@ df.createOrReplaceTempView("IndirectSales")
 
 // COMMAND ----------
 
-//%sql select max(Date) max_date from IndirectSales where Date is not null or Date <> "\\N" ----2019-09-29T00:00:00.000+0000
+// %sql select max(Date) max_date from IndirectSales where Date is not null or Date <> "\\N" ----2019-09-29T00:00:00.000+0000
 
 
 // COMMAND ----------
@@ -96,12 +96,12 @@ df.createOrReplaceTempView("IndirectSales")
 // %sql 
 // select 
 // (select distinct Weekid from Calendar where DayName = cast(current_date() as timestamp) ) - 
-// (select distinct Weekid from Calendar where DayName = (select max_date from current_date_info ) ) as numbers_of_weeks_back
+// (select distinct Weekid from Calendar where DayName = (select max(Date) max_date from IndirectSales where Date is not null or Date <> "\\N" ) ) as numbers_of_weeks_back
 
 
 // COMMAND ----------
 
-val numbers_of_weeks_back: Int = 7
+val numbers_of_weeks_back: Int = 0
 
 // COMMAND ----------
 
@@ -324,12 +324,12 @@ sqldf.createOrReplaceTempView("current_date_info")
 
 val sqldf = spark.sql("""
 select 
-s.Lead_SKUID,  s.OP, s.Distributor, s.Sub_channel, s.PGO, sum(s.Volume_dal)/10 volume_hl 
+s.Lead_SKUID,  s.OP, s.Distributor, s.Sub_channel, s.PGO, s.Distr_Client, sum(s.Volume_dal)/10 volume_hl 
 from IndirectSales s left join Calendar cl on s.Date = cl.DayName
 where
 cl.MonthId  >= year(date_add((select max_date from current_date_info),-60))*100 + month(date_add((select max_date from current_date_info),-60)) and
 cl.MonthId  <= year((select max_date from current_date_info))*100 + month((select max_date from current_date_info))
-group by s.Lead_SKUID,  s.OP, s.Distributor, s.Sub_channel, s.PGO
+group by s.Lead_SKUID,  s.OP, s.Distributor, s.Sub_channel, s.PGO, s.Distr_Client
 having (volume_hl > 0)
 """)
 sqldf.createOrReplaceTempView("indirect_active_objects")
@@ -340,7 +340,7 @@ sqldf.createOrReplaceTempView("indirect_active_objects")
 val sqldf = spark.sql(
 """
 select distinct 
-Lead_SKUID , OP, distributor, sub_channel, PGO
+Lead_SKUID , OP, distributor, sub_channel, PGO, Distr_Client
 from Indirect_active_objects 
 """
 )
@@ -361,10 +361,6 @@ sqldf.createOrReplaceTempView("key_info_with_week")
 
 // COMMAND ----------
 
-//СБП off-trade Санкт-Петербург ООО Невский синдикат TT pack
-
-// COMMAND ----------
-
 //Indirect_RU
 
 // COMMAND ----------
@@ -375,8 +371,8 @@ select *
 from (
 select  
 int(cl.MonthId/100) as partition_name, 
---replace (s.Distr_Client, '"' , '') distr_client , 
-replace (concat(s.OP,' ', s.Distributor,' ',  s.Sub_channel ), '"' , '') distr_client,
+replace (replace(s.Distr_Client, '  ', ' '), '"' , '') distr_client , 
+--replace (concat(s.OP,' ', s.Distributor,' ',  s.Sub_channel ), '"' , '') distr_client,
 replace (s.OP, '"' , '') OP,  
 replace (s.Distributor, '"' , '') distributor, 
 --replace (s.Client, '"' , '') client,
@@ -400,7 +396,8 @@ union
 
 select 
 int(calendar_yearmonth/100) as partition_name, 
-replace (concat(OP,' ', distributor,' ',  sub_channel ), '"' , '') distr_client,
+replace (replace(Distr_Client, '  ', ' '), '"' , '') distr_client , 
+--replace (concat(OP,' ', distributor,' ',  sub_channel ), '"' , '') distr_client,
 replace (OP, '"' , '') OP, 
 replace (distributor, '"' , '') distributor, 
 sub_channel,
