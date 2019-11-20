@@ -16,7 +16,7 @@ val fname = "weather_ru.csv"
 
 // COMMAND ----------
 
-val year_list : Seq[String] = ("2016","2017","2018","2019","2020")
+val year_list : Seq[String] = Seq("2016","2017","2018","2019","2020")
 
 // COMMAND ----------
 
@@ -79,7 +79,8 @@ val schema_year = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed,cit
 val schema_rdd_year = StructType(schema_year.split(",").map(fieldName => StructField(fieldName, StringType, true)) )
 var result_df = sqlContext.createDataFrame(sc.emptyRDD[Row], schema_rdd_year)
 
-for year <- year_list {
+
+for (year <- year_list) {
 
   val schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed,city,date"
   val schema_rdd = StructType(schema_string.split(",").map(fieldName => StructField(fieldName, StringType, true)) )
@@ -89,18 +90,75 @@ for year <- year_list {
   val file_list : Seq[String] = dbutils.fs.ls(SearchPath).map(_.path).filter(_.contains(name))
   for (file <- file_list)  {
     val file_list : Seq[String] = dbutils.fs.ls(file).map(_.path).filter(_.contains(name)) 
-    var city = file_list(0).replace(file, "").replace("weather_", "").replace("_"+name + ".csv", "") 
-    var file_location = file + file_list(0).replace(file, "")
-    var dff = spark.read.format(file_type).option("delimiter", ";").option("header", "true").load(file_location).select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
-    var empty_df_city_date = dff.withColumn("city", lit(city)).withColumn("date", expr("from_unixtime(time ,'YYYY-MM-dd')"))
+    if (file_list.size > 0) {
+ 
+     var city = file_list(0).replace(file, "").replace("weather_", "").replace("_"+name + ".csv", "") 
+     var file_location = file + file_list(0).replace(file, "")
+     var dff = spark.read.format(file_type).option("delimiter", ";").option("header", "true").load(file_location) 
+    
+     if (!dff.columns.contains("time")) dff = dff.withColumn("time", expr("null") ) 
+     if (!dff.columns.contains("apparentTemperatureMax"))  dff = dff.withColumn("apparentTemperatureMax", expr("null"))
+     if (!dff.columns.contains("cloudCover")) dff = dff.withColumn("cloudCover", expr("null")) 
+     if (!dff.columns.contains("humidity")) dff = dff.withColumn("humidity", expr("null")) 
+     if (!dff.columns.contains("windSpeed")) dff = dff.withColumn("windSpeed", expr("null")) 
+    
+    dff = dff.select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
+    
+    var empty_df_city_date = dff.withColumn("city", lit(city)).withColumn("date", expr("cast(from_unixtime(time) as date)"))
 
-    empty_df = empty_df.union(empty_df_city_date)
+   empty_df = empty_df.union(empty_df_city_date)
+    }
   }
   
   result_df = result_df.union(empty_df)
-
+   
 }  
 result_df.createOrReplaceTempView("main")
+
+
+// COMMAND ----------
+
+val year_list : Seq[String] = Seq("2016","2017","2018","2019","2020")
+
+// COMMAND ----------
+
+var i:Long = 0
+for (year <- year_list) {
+ var g:Long = 0
+  val name : String = year  
+  val file_list : Seq[String] = dbutils.fs.ls(SearchPath).map(_.path).filter(_.contains(name))
+  for (file <- file_list)  {
+    val file_list : Seq[String] = dbutils.fs.ls(file).map(_.path).filter(_.contains(name)) 
+    if (file_list.size > 0) {
+ 
+     var city = file_list(0).replace(file, "").replace("weather_", "").replace("_"+name + ".csv", "") 
+     var file_location = file + file_list(0).replace(file, "")
+     var dff = spark.read.format(file_type).option("delimiter", ";").option("header", "true").load(file_location) 
+      //println (year)
+      //println(dff.count)
+      var y = dff.count
+     i = i+ y
+    }
+     
+  }
+ 
+println(year)
+println(g)
+}
+ println (i) 
+ 
+
+// COMMAND ----------
+
+// MAGIC %sql
+// MAGIC select  year(date), count(*)  from main group by year(date) --order by 1 --where city = 'Irkutsk' --and date <> '2015-12-31'
+
+// COMMAND ----------
+
+// MAGIC %sql select count(*) from main
+
+// COMMAND ----------
+
 
 
 // COMMAND ----------
