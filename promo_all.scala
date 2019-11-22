@@ -323,7 +323,7 @@ tab.Client = 'X5 Retail Group' or tab.Client = 'Магнит (Тандер)' ,
 ,if (tab.Activation_Code=900, tab.Year_Week , act_info.weekid_st) start_orders
 ,if (tab.Activation_Code=900, tab.Year_Week , act_info.weekid_end) end_orders
 ,if (isnull(act_info.length_promo), 0, act_info.length_promo) length_promo
-,if (isnull(act_info.shelf_discount), 0, act_info.shelf_discount) shelf_discount
+,if (isnull(act_info.shelf_discount) or act_info.shelf_discount > 1 , 0, act_info.shelf_discount) shelf_discount
 ,if (isnull(act_info.discount), 0, act_info.discount) discount
 -- if (isnull(act_info.forecast_volume/100), 0, act_info.forecast_volume/100)   forecast_volume
 ,if (isnull(fr_v.forecast_volume/100), 0, fr_v.forecast_volume/100)   forecast_volume
