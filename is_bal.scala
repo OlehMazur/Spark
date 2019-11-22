@@ -88,7 +88,7 @@ df.createOrReplaceTempView("IndirectSales")
 
 // COMMAND ----------
 
-// %sql select max(Date) max_date from IndirectSales where Date is not null or Date <> "\\N" ----2019-09-29T00:00:00.000+0000
+//  %sql select max(Date) max_date from IndirectSales where Date is not null or Date <> "\\N" ----2019-09-29T00:00:00.000+0000
 
 
 // COMMAND ----------
@@ -371,7 +371,8 @@ select *
 from (
 select  
 int(cl.MonthId/100) as partition_name, 
-replace (replace(s.Distr_Client, '  ', ' '), '"' , '') distr_client , 
+s.Distr_Client as distr_client,
+--replace (replace(s.Distr_Client, '  ', ' '), '"' , '') distr_client , 
 --replace (concat(s.OP,' ', s.Distributor,' ',  s.Sub_channel ), '"' , '') distr_client,
 replace (s.OP, '"' , '') OP,  
 replace (s.Distributor, '"' , '') distributor, 
@@ -396,7 +397,8 @@ union
 
 select 
 int(calendar_yearmonth/100) as partition_name, 
-replace (replace(Distr_Client, '  ', ' '), '"' , '') distr_client , 
+Distr_Client as distr_client,
+--replace (replace(Distr_Client, '  ', ' '), '"' , '') distr_client , 
 --replace (concat(OP,' ', distributor,' ',  sub_channel ), '"' , '') distr_client,
 replace (OP, '"' , '') OP, 
 replace (distributor, '"' , '') distributor, 
@@ -566,6 +568,45 @@ else "Unexpected parameter"
 // from (
 // select OP, distributor, sub_channel, distr_client, row_number() over (partition by OP, distributor, sub_channel order by distr_client) row_num
 // from Indirect_RU 
-// group by OP, distributor, sub_channel, distr_client
+// group by OP, distributor, sub_channel,distr_client
 // ) tab
-// where row_num > 1
+// where --distr_client = 119
+// row_num > 1
+
+// COMMAND ----------
+
+// %sql select OP, distributor, sub_channel, distr_client
+// from Indirect_RU 
+// where OP = 'СБП off-trade Тула' and distributor = 'ООО Оптовая Компания Продторг' and sub_channel = 'MT LKA'
+// group by OP, distributor, sub_channel,distr_client
+
+// COMMAND ----------
+
+// %sql select distinct OP, distributor, sub_channel, distr_client, PGO  from IndirectSales where distr_client in (44,119)
+
+// COMMAND ----------
+
+// %sql 
+// select * from Indirect_RU limit 1
+
+// COMMAND ----------
+
+// %sql select count(*) from Indirect_RU --limit 1
+
+// COMMAND ----------
+
+// %sql select count(*) from (select distinct * from Indirect_RU )--limit 1
+
+// COMMAND ----------
+
+// %sql 
+// select distinct lead_sku from IndirectSales where lead_sku not in (Select distinct lead_sku from Indirect_RU )
+
+// COMMAND ----------
+
+// %sql select sum(s.Volume_dal)/10 from IndirectSales s left join  Calendar cl on s.Date = cl.DayName where cl.WeekId >= 201601 
+
+
+// COMMAND ----------
+
+// %sql select sum(volume_hl) from Indirect_RU
