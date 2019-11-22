@@ -1013,7 +1013,7 @@ tab.customer_planning_group = 'X5 Retail Group' or tab.customer_planning_group =
 ) cpg_format,
 
 
-tab.plant, tab.division, tab.activation_code, tab.number_of_promo, tab.mechanism, if (isnull(tab.length_promo),0,tab.length_promo) length_promo  , if (isnull(tab.shelf_discount), 0, tab.shelf_discount ) shelf_discount , if (isnull(tab.discount), 0,tab.discount) discount , tab.open_orders_promo, tab.open_orders, tab.total_sales_volume as total_shipments, tab.total_shipments_volume_hl as total_shipments_volume, tab.benchmark_forecast
+tab.plant, tab.division, tab.activation_code, tab.number_of_promo, tab.mechanism, if (isnull(tab.length_promo),0,tab.length_promo) length_promo  , if (isnull(tab.shelf_discount) or tab.shelf_discount > 1, 0, tab.shelf_discount ) shelf_discount , if (isnull(tab.discount), 0,tab.discount) discount , tab.open_orders_promo, tab.open_orders, tab.total_sales_volume as total_shipments, tab.total_shipments_volume_hl as total_shipments_volume, tab.benchmark_forecast
 
 from (
 select 
