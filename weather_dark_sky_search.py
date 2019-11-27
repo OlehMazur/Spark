@@ -26,6 +26,10 @@ import time
 import pandas as pd
 import geopy.geocoders
 from geopy.geocoders import Nominatim
+from pyspark.sql.functions import col,lit,expr 
+from pyspark.sql import SQLContext
+from pyspark.sql import Row
+from pyspark.sql.types import StructType,StructField,StringType
 
 # COMMAND ----------
 
@@ -160,6 +164,47 @@ for city in cities_format:
           #print ('fiveth nearest city ' + city_to_exclude_5)
           #nearests_city.append(5)
           nearests_city.append(city_to_exclude_5)
+          cities_format_exclude.remove(city_to_exclude_5)
+          for city6 in cities_format_exclude: 
+            if city6 != city:
+              continue
+            city_to_exclude_6 = get_nearest_city(city6,cities_format_exclude )
+            #print ('fiveth nearest city ' + city_to_exclude_5)
+            #nearests_city.append(5)
+            nearests_city.append(city_to_exclude_6)
+            cities_format_exclude.remove(city_to_exclude_6)
+            for city7 in cities_format_exclude: 
+              if city7 != city:
+                continue
+              city_to_exclude_7 = get_nearest_city(city7,cities_format_exclude )
+              #print ('fiveth nearest city ' + city_to_exclude_5)
+              #nearests_city.append(5)
+              nearests_city.append(city_to_exclude_7)
+              cities_format_exclude.remove(city_to_exclude_7)
+              for city8 in cities_format_exclude: 
+                if city8 != city:
+                  continue
+                city_to_exclude_8 = get_nearest_city(city8,cities_format_exclude )
+                #print ('fiveth nearest city ' + city_to_exclude_5)
+                #nearests_city.append(5)
+                nearests_city.append(city_to_exclude_8)
+                cities_format_exclude.remove(city_to_exclude_8)
+                for city9 in cities_format_exclude: 
+                  if city9 != city:
+                    continue
+                  city_to_exclude_9 = get_nearest_city(city9,cities_format_exclude )
+                  #print ('fiveth nearest city ' + city_to_exclude_5)
+                  #nearests_city.append(5)
+                  nearests_city.append(city_to_exclude_9)
+                  cities_format_exclude.remove(city_to_exclude_9)
+                  for city10 in cities_format_exclude: 
+                    if city10 != city:
+                      continue
+                    city_to_exclude_10 = get_nearest_city(city10,cities_format_exclude )
+                    #print ('fiveth nearest city ' + city_to_exclude_5)
+                    #nearests_city.append(5)
+                    nearests_city.append(city_to_exclude_10)
+                    cities_format_exclude.remove(city_to_exclude_10)
   
   result[city] = nearests_city
     
@@ -244,6 +289,10 @@ else:
   
   nearest_city_list = result[city]
   
+  schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed"
+  mySchema = StructType([StructField(c, StringType()) for c in schema_string.split(",")])
+  df_full = spark.createDataFrame(data=[], schema=mySchema)
+  
   for found_near_city in nearest_city_list:
     
     lat =city_dic_with_geo_clean[found_near_city]['lat']
@@ -260,28 +309,135 @@ else:
              data.append(forecast[0].d)
 
     t2=time.time()  
-    print( ('city ' + str(found_near_city)), ("it takes %s seconds to get weather forecast ") % str((t2 - t1)/60)) 
+    print( ('city ' + str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
     
     if (len(data) > 0) :     
-      df = pd.DataFrame(data)   
-      df_s = spark.createDataFrame(df)
-
-      #save to blob storage
-      readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
-      writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
-      fname = "weather_" + city + '_' + found_near_city + '_'+ str(year)+ ".csv"
-      df_s.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
-
-      file_list = dbutils.fs.ls(readPath)
-      for i in file_list:
-        if i[1].startswith("part-00000"):  
-          read_name = i[1]
-      dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
-      dbutils.fs.rm(readPath , recurse= True)
-      print("file has been saved to blob, " + str(len(data)) + " records" ) 
+      df = pd.DataFrame(data) 
+      if ('time' not in df.columns):
+        df = df.withColumn("time", expr("null") )
+      if ('apparentTemperatureMax' not in df.columns):
+        df = df.withColumn("apparentTemperatureMax", expr("null"))
+      if ('cloudCover' not in df.columns ):
+        df = df.withColumn("cloudCover", expr("null")) 
+      if ('humidity' not in df.columns ):
+        df = df.withColumn("humidity", expr("null")) 
+      if ('windSpeed' not in df.columns ):
+        df = df.withColumn("windSpeed", expr("null")) 
+      
+      df = df.select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
+      
+      filter_date = df.selectExpr("time").exceptAll(df_full.selectExpr("time"))
+      
+      list_of_date_clear= list()
+      list_of_date = filter_date.toPandas().values.tolist()
+      for date in list_of_date:
+        list_of_date_clear.append(str(date).replace("[", "").replace("]", ""))
+      
+      df_new_data = df.where(col("time").isin(list_of_date_clear ))
     
+      df_full = df_full.union(df_new_data)
+   
     if (len(data) >=365):
         break
-  
+
+  #save to blob storage
+  df_s = spark.createDataFrame(df_full)
+  readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+  writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
+  fname = "weather_" + city + '_' + str(year)+ ".csv"
+  df_s.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
+
+  file_list = dbutils.fs.ls(readPath)
+  for i in file_list:
+    if i[1].startswith("part-00000"):  
+      read_name = i[1]
+  dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
+  dbutils.fs.rm(readPath , recurse= True)
+  print("file has been saved to blob, " + str(len(df_full)) + " records" ) 
 
 #dbutils.notebook.exit( message )
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed,city"
+mySchema = StructType([StructField(c, StringType()) for c in schema_string.split(",")])
+df = spark.createDataFrame(data=[], schema=mySchema)
+df.show()
+
+# COMMAND ----------
+
+file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/weather_Kostroma_2016/weather_Kostroma_Dzerzhinsk_2016.csv"
+file_type = "csv"
+city_df_dzer = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
+city_df_dzer.createOrReplaceTempView("Dzerzhinsk")
+
+# COMMAND ----------
+
+file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/weather_Kostroma_2016/weather_Kostroma_Yaroslavl_2016.csv"
+file_type = "csv"
+city_df_yar = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
+city_df_yar.createOrReplaceTempView("Yaroslavl")
+
+# COMMAND ----------
+
+# MAGIC %sql 
+# MAGIC select distinct cast(from_unixtime(time) as date)
+# MAGIC from Dzerzhinsk except (select distinct cast(from_unixtime(time) as date)
+# MAGIC from Yaroslavl)
+
+# COMMAND ----------
+
+filter_date = city_df_dzer.selectExpr("time").exceptAll(city_df_yar.selectExpr("time"))
+
+# COMMAND ----------
+
+list_of_date_clear= list()
+list_of_date = filter_date.toPandas().values.tolist()
+for date in list_of_date:
+  list_of_date_clear.append(str(date).replace("[", "").replace("]", ""))
+  
+
+# COMMAND ----------
+
+city_df_dzer_new_data = city_df_dzer.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").where(col("time").isin(list_of_date_clear ))
+
+# COMMAND ----------
+
+data_full= city_df_yar.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").union(city_df_dzer_new_data)
+
+# COMMAND ----------
+
+data_full.count()
+
+# COMMAND ----------
+
+city_df_yar.selectExpr("min(cast(from_unixtime(time) as date))").show()
+
+# COMMAND ----------
+
+city_df_yar.selectExpr("max(cast(from_unixtime(time) as date))").show()
+
+# COMMAND ----------
+
+df.count()
+
+# COMMAND ----------
+
+city_df_dzer.selectExpr("cast(from_unixtime(time) as date)").exceptAll(city_df_yar.selectExpr("cast(from_unixtime(time) as date)")).show()
+
+# COMMAND ----------
+
+from pyspark.sql.functions import col,lit 
+
+# COMMAND ----------
+
+city_df_dzer.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").where("time = 1451768400").show()
+
+# COMMAND ----------
+
+city_df_dzer.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").where(col("time").isin(list_of_date_clear )).show()
