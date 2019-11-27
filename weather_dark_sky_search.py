@@ -117,7 +117,7 @@ def get_nearest_city (city_point, cities_format ):
 
 # COMMAND ----------
 
-get_nearest_city('Kostroma', cities_format)
+# get_nearest_city('Kostroma', cities_format)
 
 # COMMAND ----------
 
@@ -213,37 +213,27 @@ for city in cities_format:
 
 # COMMAND ----------
 
-result = {}
-nearests_city = list()
+# result = {}
+# nearests_city = list()
 
-for city in cities_format: 
-  nearests_city = list()
-  #print('for city ' + city)
-  cities_format_exclude = cities_format.copy()
-  city_to_exclude_1 = get_nearest_city(city, cities_format)
-  #print('first nearest city ' + city_to_exclude_1)
-  #nearests_city.append(1)
-  nearests_city.append(city_to_exclude_1)
-  cities_format_exclude.remove(city_to_exclude_1)
+# for city in cities_format: 
+#   nearests_city = list()
+#   #print('for city ' + city)
+#   cities_format_exclude = cities_format.copy()
+#   city_to_exclude_1 = get_nearest_city(city, cities_format)
+#   #print('first nearest city ' + city_to_exclude_1)
+#   #nearests_city.append(1)
+#   nearests_city.append(city_to_exclude_1)
+#   cities_format_exclude.remove(city_to_exclude_1)
     
-  result[city] = nearests_city
+#   result[city] = nearests_city
     
     
 
 
 # COMMAND ----------
 
-result['Kostroma']
-
-# COMMAND ----------
-
-ar = result['Kostroma']
-for i in ar:
-  print(i)
-
-# COMMAND ----------
-
-
+# result['Kostroma']
 
 # COMMAND ----------
 
@@ -269,21 +259,39 @@ lng = location.longitude
 
 days_in_year =  366 if calendar.isleap(year) else 365 
 #days_in_year = 2 #TEST
-data =[]
 
-t1=time.time()
-
+#check if there is some records in DarkSaky for City  
+count_of_records = 0
 start = datetime.datetime(year, 1, 1)
 for offset in range(0, days_in_year):
-     date = start+datetime.timedelta(offset)
-     forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
-     if (len(forecast) > 0) :
-         data.append(forecast[0].d)
-         
-t2=time.time()  
-#print(("it takes %s seconds to get weather forecast ") % (t2 - t1)) 
+  #for every 5-th day  
+  if (offset%5 ==0): 
+    date = start+datetime.timedelta(offset)
+    forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
+    count_of_records+= len(forecast)
 
-if (len(data) > 0) :     
+#if (count_of_records == 0):
+#  print(str(city) + " there is no data for the city")
+
+#end checking  
+
+if (count_of_records > 0):     
+
+  data =[]
+
+  t1=time.time()
+
+  start = datetime.datetime(year, 1, 1)
+  for offset in range(0, days_in_year):
+       date = start+datetime.timedelta(offset)
+       forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
+       if (len(forecast) > 0) :
+           data.append(forecast[0].d)
+
+  t2=time.time()  
+  print(("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
+
+#if (len(data) > 0) :     
   df = pd.DataFrame(data)   
   df_s = spark.createDataFrame(df)
 
@@ -318,6 +326,20 @@ else:
     lat =city_dic_with_geo_clean[found_near_city]['lat']
     lng= city_dic_with_geo_clean[found_near_city]['lon']
     
+    #check if there is some records in DarkSaky for City  
+    count_of_records = 0
+    start = datetime.datetime(year, 1, 1)
+    for offset in range(0, days_in_year):
+    #for every 5-th day  
+      if (offset%5 ==0): 
+        date = start+datetime.timedelta(offset)
+        forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
+        count_of_records+= len(forecast)
+    if (count_of_records == 0):
+      print(str(found_near_city) + " there is no data for the city")
+      continue
+    #end checking  
+    
     data =[]
     t1=time.time()
 
@@ -347,27 +369,23 @@ else:
       df = df[["time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
       df_s = spark.createDataFrame(df, schema=mySchema)
       #df_s = df_s.select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
-      print("df_s data" +str(df_s.count()) )
+      #print("df_s data" +str(df_s.count()) )
       
       filter_date = df_s.selectExpr("time").exceptAll(df_full.selectExpr("time"))
-      print("filter_date" + str(filter_date.count()) )
+      #print("filter_date" + str(filter_date.count()) )
       
       list_of_date_clear= list()
       list_of_date = filter_date.toPandas().values.tolist()
       for date in list_of_date:
         list_of_date_clear.append( int(str(date).replace("[", "").replace("]", "").replace("'", '')) )
         
-      print("list " + str(len(list_of_date_clear)))
-      for item in list_of_date_clear:
-        print(item)
-        
-      df_s.printSchema()  
+      #print("list " + str(len(list_of_date_clear))) 
         
       df_new_data = df_s.where(col("time").isin(list_of_date_clear ))
-      print("new data " + str(df_new_data.count()))
+      #print("new data " + str(df_new_data.count()))
     
       df_full = df_full.union(df_new_data)
-      print("full data " + str(df_full.count()))
+      #print("full data " + str(df_full.count()))
    
     if (len(data) >=365):
         break
@@ -392,160 +410,27 @@ else:
 
 # COMMAND ----------
 
-schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed"
-mySchema = StructType([StructField(c, StringType()) for c in schema_string.split(",")])
-df_full = spark.createDataFrame(data=[], schema=mySchema)
+# file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/weather_Kostroma_2016/weather_Kostroma_Yaroslavl_2016.csv"
+# file_type = "csv"
+# city_df_yar = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
+# city_df_yar.createOrReplaceTempView("Yaroslavl")
 
 # COMMAND ----------
 
-found_near_city = 'Yaroslavl'
-lat =city_dic_with_geo_clean[found_near_city]['lat']
-lng= city_dic_with_geo_clean[found_near_city]['lon']
-    
-data =[]
-t1=time.time()
-start = datetime.datetime(year, 1, 1)
-for offset in range(0, days_in_year):
-  date = start+datetime.timedelta(offset)
-  forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
-  if (len(forecast) > 0) :
-     data.append(forecast[0].d)
-
-t2=time.time()  
-print( ('city ' + str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
+# %sql 
+# select distinct /*cast(from_unixtime(time) as timestamp) ,*/ time
+# from Dzerzhinsk 
+# except 
+# (select distinct /*cast(from_unixtime(time) as timestamp)*/ time from Yaroslavl)
 
 # COMMAND ----------
 
-if (len(data) > 0) :     
-  df = pd.DataFrame(data) 
-  if ('time' not in df.columns):
-    df = df.withColumn("time", expr("") )
-  if ('apparentTemperatureMax' not in df.columns):
-    df = df.withColumn("apparentTemperatureMax", expr(""))
-  if ('cloudCover' not in df.columns ):
-    df = df.withColumn("cloudCover", expr("null")) 
-  if ('humidity' not in df.columns ):
-    df = df.withColumn("humidity", expr("null")) 
-  if ('windSpeed' not in df.columns ):
-    df = df.withColumn("windSpeed", expr("null")) 
-       
-  df = df[["time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]]
-  df_s = spark.createDataFrame(df, schema=mySchema)
-      #df_s = df_s.select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
-  print("df_s data" +str(df_s.count()) )
-      
-  filter_date = df_s.selectExpr("time").exceptAll(df_full.selectExpr("time"))
-  print("filter_date" + str(filter_date.count()) )
-      
-  list_of_date_clear= list()
-  list_of_date = filter_date.toPandas().values.tolist()
-  for date in list_of_date:
-    list_of_date_clear.append( int(str(date).replace("[", "").replace("]", "").replace("'", '') ) )
-        
-      
-        
-  df_s.printSchema()  
-        
-  df_new_data = df_s.where(col("time").isin(list_of_date_clear))
-                          #.isin(list_of_date_clear ))
-  print("new data " + str(df_new_data.count()))
-    
-     
+# city_df_dzer.selectExpr("cast(from_unixtime(time) as date)").exceptAll(city_df_yar.selectExpr("cast(from_unixtime(time) as date)")).show()
 
 # COMMAND ----------
 
-list_of_date = filter_date.toPandas().values
+# city_df_dzer.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").where("time = 1451768400").show()
 
 # COMMAND ----------
 
-schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed,city"
-mySchema = StructType([StructField(c, StringType()) for c in schema_string.split(",")])
-df = spark.createDataFrame(data=[], schema=mySchema)
-df.show()
-
-# COMMAND ----------
-
-file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/weather_Kostroma_2016/weather_Kostroma_Dzerzhinsk_2016.csv"
-file_type = "csv"
-city_df_dzer = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-city_df_dzer.createOrReplaceTempView("Dzerzhinsk")
-
-# COMMAND ----------
-
-city_df_dzer.printSchema()
-
-# COMMAND ----------
-
-file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/weather_Kostroma_2016/weather_Kostroma_Yaroslavl_2016.csv"
-file_type = "csv"
-city_df_yar = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-city_df_yar.createOrReplaceTempView("Yaroslavl")
-
-# COMMAND ----------
-
-# MAGIC %sql 
-# MAGIC select distinct /*cast(from_unixtime(time) as timestamp) ,*/ time
-# MAGIC from Dzerzhinsk 
-# MAGIC except 
-# MAGIC (select distinct /*cast(from_unixtime(time) as timestamp)*/ time from Yaroslavl)
-
-# COMMAND ----------
-
-filter_date = city_df_dzer.selectExpr("time").exceptAll(city_df_yar.selectExpr("time"))
-
-# COMMAND ----------
-
-list_of_date_clear= list()
-list_of_date = filter_date.toPandas().values.tolist()
-for date in list_of_date:
-  list_of_date_clear.append(str(date).replace("[", "").replace("]", ""))
-  
-
-# COMMAND ----------
-
-for y in list_of_date_clear:
-  print(y)
-
-# COMMAND ----------
-
-city_df_dzer_new_data = city_df_dzer.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").where(col("time").isin(list_of_date_clear ))
-
-# COMMAND ----------
-
-city_df_dzer_new_data.show()
-
-# COMMAND ----------
-
-data_full= city_df_yar.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").union(city_df_dzer_new_data)
-
-# COMMAND ----------
-
-data_full.count()
-
-# COMMAND ----------
-
-city_df_yar.selectExpr("min(cast(from_unixtime(time) as date))").show()
-
-# COMMAND ----------
-
-city_df_yar.selectExpr("max(cast(from_unixtime(time) as date))").show()
-
-# COMMAND ----------
-
-df.count()
-
-# COMMAND ----------
-
-city_df_dzer.selectExpr("cast(from_unixtime(time) as date)").exceptAll(city_df_yar.selectExpr("cast(from_unixtime(time) as date)")).show()
-
-# COMMAND ----------
-
-from pyspark.sql.functions import col,lit 
-
-# COMMAND ----------
-
-city_df_dzer.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").where("time = 1451768400").show()
-
-# COMMAND ----------
-
-city_df_dzer.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").where(col("time").isin(list_of_date_clear )).show()
+# city_df_dzer.select("time","apparentTemperatureMax","cloudCover","humidity","windSpeed").where(col("time").isin(list_of_date_clear )).show()
