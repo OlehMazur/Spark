@@ -89,8 +89,8 @@ for i, v in city_dic_with_geo.items():
 
 # COMMAND ----------
 
-city_dic_with_geo_clean['Kostroma']['lat']
-#city_dic_with_geo_clean['Kostroma']['lon']
+#city_dic_with_geo_clean['Kostroma']['lat'] #57.7679158
+city_dic_with_geo_clean['Kostroma']['lon'] #40.9269141
 
 # COMMAND ----------
 
@@ -283,34 +283,140 @@ if (count_of_records > 0):
 
   start = datetime.datetime(year, 1, 1)
   for offset in range(0, days_in_year):
-       date = start+datetime.timedelta(offset)
-       forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
-       if (len(forecast) > 0) :
-           data.append(forecast[0].d)
+    date = start+datetime.timedelta(offset)
+    forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
+    if (len(forecast) > 0) :
+      data.append(forecast[0].d)
 
   t2=time.time()  
   print(("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
 
-#if (len(data) > 0) :     
-  df = pd.DataFrame(data)   
-  df_s = spark.createDataFrame(df)
+  if (len(data) < 365):
+    print(str(city) + " found only " + str(len(data)) + " records" )
+    df = pd.DataFrame(data) 
+    if ('time' not in df.columns):
+      df = df.withColumn("time", expr("") )
+    if ('apparentTemperatureMax' not in df.columns):
+      df = df.withColumn("apparentTemperatureMax", expr(""))
+    if ('cloudCover' not in df.columns ):
+      df = df.withColumn("cloudCover", expr("")) 
+    if ('humidity' not in df.columns ):
+      df = df.withColumn("humidity", expr("")) 
+    if ('windSpeed' not in df.columns ):
+      df = df.withColumn("windSpeed", expr(""))
+      
+    df = df[["time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
+  
+    nearest_city_list = result[city]
+  
+    schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed"
+    mySchema = StructType([StructField(c, StringType()) for c in schema_string.split(",")])
+    df_full = spark.createDataFrame(data = df, schema=mySchema)
+    
+    for found_near_city in nearest_city_list:
+    
+      lat =city_dic_with_geo_clean[found_near_city]['lat']
+      lng= city_dic_with_geo_clean[found_near_city]['lon']
+    
+      #check if there is some records in DarkSaky for City  
+      count_of_records = 0
+      start = datetime.datetime(year, 1, 1)
+      for offset in range(0, days_in_year):
+      #for every 5-th day  
+        if (offset%5 ==0): 
+          date = start+datetime.timedelta(offset)
+          forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
+          count_of_records+= len(forecast)
+      if (count_of_records == 0):
+        print(str(found_near_city) + " there is no data for the city")
+        continue
+      #end checking  
+    
+      data =[]
+      t1=time.time()
 
-  #save to blob storage
-  readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
-  writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
-  fname = "weather_" + city + '_' + str(year)+ ".csv"
-  df_s.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
+      start = datetime.datetime(year, 1, 1)
+      for offset in range(0, days_in_year):
+        date = start+datetime.timedelta(offset)
+        forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
+        if (len(forecast) > 0) :
+          data.append(forecast[0].d)
 
-  file_list = dbutils.fs.ls(readPath)
-  for i in file_list:
-    if i[1].startswith("part-00000"):  
-      read_name = i[1]
-  dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
-  dbutils.fs.rm(readPath , recurse= True)
+      t2=time.time()  
+      print( ( str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
 
-  message = ('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)
-  #('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60) , ( " count of rows " + str(df.shape[0]) ) , (  " count of apparentTemperatureMax " +  str(df['apparentTemperatureMax'].count())  ), (  " count of cloudCover " +  str(df['cloudCover'].count())  ), (  " count of humidity " +  str(df['humidity'].count())  ), (  " count of windSpeed " +  str(df['windSpeed'].count())  )
-  print(message)
+      if (len(data) > 0) :     
+        df = pd.DataFrame(data) 
+        if ('time' not in df.columns):
+          df = df.withColumn("time", expr("") )
+        if ('apparentTemperatureMax' not in df.columns):
+          df = df.withColumn("apparentTemperatureMax", expr(""))
+        if ('cloudCover' not in df.columns ):
+          df = df.withColumn("cloudCover", expr("")) 
+        if ('humidity' not in df.columns ):
+          df = df.withColumn("humidity", expr("")) 
+        if ('windSpeed' not in df.columns ):
+          df = df.withColumn("windSpeed", expr("")) 
+
+        df = df[["time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
+        df_s = spark.createDataFrame(df, schema=mySchema)
+        #df_s = df_s.select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
+        #print("df_s data" +str(df_s.count()) )
+
+        filter_date = df_s.selectExpr("time").exceptAll(df_full.selectExpr("time"))
+        #print("filter_date" + str(filter_date.count()) )
+      
+        list_of_date_clear= list()
+        list_of_date = filter_date.toPandas().values.tolist()
+        for date in list_of_date:
+          list_of_date_clear.append( int(str(date).replace("[", "").replace("]", "").replace("'", '')) )
+
+        #print("list " + str(len(list_of_date_clear))) 
+
+        df_new_data = df_s.where(col("time").isin(list_of_date_clear ))
+        #print("new data " + str(df_new_data.count()))
+
+        df_full = df_full.union(df_new_data)
+        #print("full data " + str(df_full.count()))
+
+      if (len(data) >=365):
+        break
+
+    #save to blob storage
+    #df_s = spark.createDataFrame(df_full)
+    readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+    writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
+    fname = "weather_" + city + '_' + str(year)+ ".csv"
+    df_full.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
+
+    file_list = dbutils.fs.ls(readPath)
+    for i in file_list:
+      if i[1].startswith("part-00000"):  
+        read_name = i[1]
+    dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
+    dbutils.fs.rm(readPath , recurse= True)
+    print("file has been saved to blob, " + str(df_full.count()) + " records" )
+    
+        
+  else:
+    df = pd.DataFrame(data)   
+    df_s = spark.createDataFrame(df)
+    #save to blob storage
+    readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+    writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
+    fname = "weather_" + city + '_' + str(year)+ ".csv"
+    df_s.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
+
+    file_list = dbutils.fs.ls(readPath)
+    for i in file_list:
+      if i[1].startswith("part-00000"):  
+        read_name = i[1]
+    dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
+    dbutils.fs.rm(readPath , recurse= True)
+
+    message = (str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60), (str(len(data)) +  " records")
+    #('city ' + str(city)), (" it takes %s minutes to get weather forecast ") % str((t2 - t1)/60) , ( " count of rows " + str(df.shape[0]) ) , (  " count of apparentTemperatureMax " +  str(df['apparentTemperatureMax'].count())  ), (  " count of cloudCover " +  str(df['cloudCover'].count())  ), (  " count of humidity " +  str(df['humidity'].count())  ), (  " count of windSpeed " +  str(df['windSpeed'].count())  )
+    print(message)
 else: 
   #message = str(city) + " there is no data for the city"
   print(str(city) + " there is no data for the city")
@@ -345,13 +451,13 @@ else:
 
     start = datetime.datetime(year, 1, 1)
     for offset in range(0, days_in_year):
-         date = start+datetime.timedelta(offset)
-         forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
-         if (len(forecast) > 0) :
-             data.append(forecast[0].d)
+      date = start+datetime.timedelta(offset)
+      forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
+      if (len(forecast) > 0) :
+        data.append(forecast[0].d)
 
     t2=time.time()  
-    print( ('city ' + str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
+    print( ( str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
     
     if (len(data) > 0) :     
       df = pd.DataFrame(data) 
@@ -365,7 +471,7 @@ else:
         df = df.withColumn("humidity", expr("")) 
       if ('windSpeed' not in df.columns ):
         df = df.withColumn("windSpeed", expr("")) 
-       
+      
       df = df[["time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
       df_s = spark.createDataFrame(df, schema=mySchema)
       #df_s = df_s.select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
@@ -386,9 +492,9 @@ else:
     
       df_full = df_full.union(df_new_data)
       #print("full data " + str(df_full.count()))
-   
+      
     if (len(data) >=365):
-        break
+      break
 
   #save to blob storage
   #df_s = spark.createDataFrame(df_full)
