@@ -17,6 +17,13 @@ city_df.createOrReplaceTempView("City")
 
 # COMMAND ----------
 
+file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/tmp/city_with_geo_info.csv"
+file_type = "csv"
+city_df_geo = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
+city_df_geo.createOrReplaceTempView("city_with_geo_info")
+
+# COMMAND ----------
+
 import sys
 import os
 import forecastio
@@ -24,8 +31,8 @@ import datetime
 import calendar
 import time
 import pandas as pd
-import geopy.geocoders
-from geopy.geocoders import Nominatim
+#import geopy.geocoders
+#from geopy.geocoders import Nominatim
 from pyspark.sql.functions import col,lit,expr 
 from pyspark.sql import SQLContext
 from pyspark.sql import Row
@@ -33,16 +40,16 @@ from pyspark.sql.types import StructType,StructField,StringType
 
 # COMMAND ----------
 
-def getLatLng (city):
+# def getLatLng (city):
 
-  #geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
-  geopy.geocoders.options.default_timeout = 7 #None
-  geolocator = Nominatim(user_agent="get lat and long")
-  location = geolocator.geocode(city)
+#   #geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+#   geopy.geocoders.options.default_timeout = 7 #None
+#   geolocator = Nominatim(user_agent="get lat and long")
+#   location = geolocator.geocode(city)
 
-  lat = location.latitude if location is not None else 'Nan'
-  lng = location.longitude if location is not None else 'Nan'
-  return ({'lat': lat, 'lon': lng})
+#   lat = location.latitude if location is not None else 'Nan'
+#   lng = location.longitude if location is not None else 'Nan'
+#   return ({'lat': lat, 'lon': lng})
                 
 
 # COMMAND ----------
@@ -74,9 +81,35 @@ for city in cities:
 
 # COMMAND ----------
 
-city_dic_with_geo = {}
-for cf in cities_format: 
-  city_dic_with_geo[cf] = getLatLng(cf)
+# city_dic_with_geo = {}
+# for cf in cities_format: 
+#   city_dic_with_geo[cf] = getLatLng(cf)
+
+# COMMAND ----------
+
+#save geo info for city
+
+# COMMAND ----------
+
+# df = pd.DataFrame(city_dic_with_geo)
+# df_s = spark.createDataFrame(df)
+
+# readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+# writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/tmp"
+# fname = "city_with_geo_info.csv"
+# df_s.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
+
+# file_list = dbutils.fs.ls(readPath)
+# for i in file_list:
+#   if i[1].startswith("part-00000"):  
+#     read_name = i[1]
+# dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
+# dbutils.fs.rm(readPath , recurse= True)
+ 
+
+# COMMAND ----------
+
+city_dic_with_geo = city_df_geo.toPandas().rename(index={0: 'lat', 1: 'lon'}).to_dict()
 
 # COMMAND ----------
 
@@ -89,8 +122,8 @@ for i, v in city_dic_with_geo.items():
 
 # COMMAND ----------
 
-#city_dic_with_geo_clean['Kostroma']['lat'] #57.7679158
-city_dic_with_geo_clean['Kostroma']['lon'] #40.9269141
+#city_dic_with_geo_clean['Kostroma'][0] #57.7679158
+#city_dic_with_geo_clean['Kostroma'][1] #40.9269141
 
 # COMMAND ----------
 
@@ -238,9 +271,12 @@ for city in cities_format:
 # COMMAND ----------
 
  #main params
+days_to_skip = 15
 message = ""  
 city = dbutils.widgets.get('City')
 year = int(dbutils.widgets.get('Year'))
+readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Test/" + "weather_" + city + '_' + str(year)
     
 #forecastio api_key
 api_key = "3ec0bb65bbe4e020bef01d63d53c648c" if dbutils.widgets.get('API_Key') == '' else dbutils.widgets.get('API_Key')
@@ -250,12 +286,14 @@ STORAGEACCOUNTNAME= 'staeeprodbigdataml2c'
 STORAGEACCOUNTKEY= 'EHYumrwso4XLSUHpvLptI33z7mumiZwZOErjrlP8FiW51Bb6NS2PaWJsqW9hsMttbZizgQjUexFZfZDBQJebYw==' 
 CONTAINERNAME= 'prod' if dbutils.widgets.get('CONTAINER_NAME') == '' else dbutils.widgets.get('CONTAINER_NAME')
 
-geopy.geocoders.options.default_timeout = None
-geolocator = Nominatim(user_agent="get lat and long")
-location = geolocator.geocode(city)
+#geopy.geocoders.options.default_timeout = None
+#geolocator = Nominatim(user_agent="get lat and long")
+#location = geolocator.geocode(city)
 
-lat = location.latitude
-lng = location.longitude
+#lat = location.latitude
+#lng = location.longitude
+lat = city_dic_with_geo_clean[city]['lat']
+lng = city_dic_with_geo_clean[city]['lon']
 
 days_in_year =  366 if calendar.isleap(year) else 365 
 #days_in_year = 2 #TEST
@@ -264,8 +302,8 @@ days_in_year =  366 if calendar.isleap(year) else 365
 count_of_records = 0
 start = datetime.datetime(year, 1, 1)
 for offset in range(0, days_in_year):
-  #for every 5-th day  
-  if (offset%5 ==0): 
+  #for every n day  
+  if (offset % days_to_skip ==0): 
     date = start+datetime.timedelta(offset)
     forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
     count_of_records+= len(forecast)
@@ -289,10 +327,14 @@ if (count_of_records > 0):
       data.append(forecast[0].d)
 
   t2=time.time()  
-  print(("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
+  m = ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)
+  print(m)
+  message = message + "\n" + str(m)
 
   if (len(data) < 365):
-    print(str(city) + " found only " + str(len(data)) + " records" )
+    m = str(city) + " found only " + str(len(data)) + " records"
+    print(m)
+    message = message + "\n" + str(m)
     df = pd.DataFrame(data) 
     if ('time' not in df.columns):
       df = df.withColumn("time", expr("") )
@@ -322,13 +364,15 @@ if (count_of_records > 0):
       count_of_records = 0
       start = datetime.datetime(year, 1, 1)
       for offset in range(0, days_in_year):
-      #for every 5-th day  
-        if (offset%5 ==0): 
+      #for every n day  
+        if (offset % days_to_skip ==0): 
           date = start+datetime.timedelta(offset)
           forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
           count_of_records+= len(forecast)
       if (count_of_records == 0):
-        print(str(found_near_city) + " there is no data for the city")
+        m = str(found_near_city) + " there is no data for the city"
+        print(m)
+        message = message + "\n" + str(m)
         continue
       #end checking  
     
@@ -342,8 +386,10 @@ if (count_of_records > 0):
         if (len(forecast) > 0) :
           data.append(forecast[0].d)
 
-      t2=time.time()  
-      print( ( str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
+      t2=time.time()
+      m = ( str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)
+      print(m) 
+      message = message + "\n" + str(m)
 
       if (len(data) > 0) :     
         df = pd.DataFrame(data) 
@@ -375,17 +421,23 @@ if (count_of_records > 0):
 
         df_new_data = df_s.where(col("time").isin(list_of_date_clear ))
         #print("new data " + str(df_new_data.count()))
+        m = str(df_new_data.count()) + " records have been added"
+        message = message + "\n" + str(m)
+        
 
         df_full = df_full.union(df_new_data)
         #print("full data " + str(df_full.count()))
 
       if (len(data) >=365):
         break
+        
+      if (df_full.count() == days_in_year):
+        break
 
     #save to blob storage
     #df_s = spark.createDataFrame(df_full)
-    readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
-    writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
+    #readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+    #writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
     fname = "weather_" + city + '_' + str(year)+ ".csv"
     df_full.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
 
@@ -395,15 +447,17 @@ if (count_of_records > 0):
         read_name = i[1]
     dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
     dbutils.fs.rm(readPath , recurse= True)
-    print("file has been saved to blob, " + str(df_full.count()) + " records" )
+    m = "file has been saved to blob, " + str(df_full.count()) + " records" 
+    print(m)
+    message = message + "\n" + str(m)
     
         
   else:
     df = pd.DataFrame(data)   
     df_s = spark.createDataFrame(df)
     #save to blob storage
-    readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
-    writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
+    #readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+    #writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
     fname = "weather_" + city + '_' + str(year)+ ".csv"
     df_s.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
 
@@ -419,7 +473,9 @@ if (count_of_records > 0):
     print(message)
 else: 
   #message = str(city) + " there is no data for the city"
-  print(str(city) + " there is no data for the city")
+  m = str(city) + " there is no data for the city"
+  print(m)
+  message = message + "\n" + str(m)
   
   nearest_city_list = result[city]
   
@@ -436,13 +492,15 @@ else:
     count_of_records = 0
     start = datetime.datetime(year, 1, 1)
     for offset in range(0, days_in_year):
-    #for every 5-th day  
-      if (offset%5 ==0): 
+    #for every n day  
+      if (offset % days_to_skip ==0): 
         date = start+datetime.timedelta(offset)
         forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
         count_of_records+= len(forecast)
     if (count_of_records == 0):
-      print(str(found_near_city) + " there is no data for the city")
+      m = str(found_near_city) + " there is no data for the city"
+      print(m)
+      message = message + "\n" + str(m)
       continue
     #end checking  
     
@@ -457,7 +515,9 @@ else:
         data.append(forecast[0].d)
 
     t2=time.time()  
-    print( ( str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)) 
+    m = ( str(found_near_city)), ("it takes %s minutes to get weather forecast ") % str((t2 - t1)/60)
+    print(m ) 
+    message = message + "\n" + str(m)
     
     if (len(data) > 0) :     
       df = pd.DataFrame(data) 
@@ -489,17 +549,22 @@ else:
         
       df_new_data = df_s.where(col("time").isin(list_of_date_clear ))
       #print("new data " + str(df_new_data.count()))
+      m = str(df_new_data.count()) + " records have been added"
+      message = message + "\n" + str(m)
     
       df_full = df_full.union(df_new_data)
       #print("full data " + str(df_full.count()))
       
     if (len(data) >=365):
       break
+      
+    if (df_full.count() == days_in_year):
+      break
 
   #save to blob storage
   #df_s = spark.createDataFrame(df_full)
-  readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
-  writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
+  #readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
+  #writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Weather/" + "weather_" + city + '_' + str(year)
   fname = "weather_" + city + '_' + str(year)+ ".csv"
   df_full.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath) 
 
@@ -509,9 +574,11 @@ else:
       read_name = i[1]
   dbutils.fs.mv(readPath+"/"+read_name, writePath+"/"+fname)   
   dbutils.fs.rm(readPath , recurse= True)
-  print("file has been saved to blob, " + str(df_full.count()) + " records" ) 
+  m = "file has been saved to blob, " + str(df_full.count()) + " records"
+  print(m ) 
+  message = message  + "\n" + str(m)
 
-#dbutils.notebook.exit( message )
+dbutils.notebook.exit( message )
 
 
 # COMMAND ----------
