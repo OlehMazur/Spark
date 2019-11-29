@@ -72,12 +72,31 @@ df.createOrReplaceTempView("Calendar")
 
 // COMMAND ----------
 
-//val city_list = spark.sql("select distinct city from Plant_City where city = 'Kostroma' ") //Test delete where !!!
-val city_list = spark.sql("select distinct city from Plant_City ")
+val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/tmp/city.csv"
+val file_type = "csv"
+val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
+df.createOrReplaceTempView("all_city_list")
 
 // COMMAND ----------
 
-val city_plant = spark.sql("select distinct city, plant from Plant_City")
+//val city_list = spark.sql("select distinct city from Plant_City where city = 'Kostroma' ") //Test delete where !!!
+val city_list = spark.sql("""
+select distinct city 
+from Plant_City 
+where city not in (
+select distinct city from Plant_City where city not in (select  distinct city from all_city_list)
+)
+""")
+
+// COMMAND ----------
+
+val city_plant = spark.sql("""
+select distinct city, plant 
+from Plant_City
+where city not in (
+select distinct city from Plant_City where city not in (select  distinct city from all_city_list)
+)
+""")
 city_plant.createOrReplaceTempView("city_plant")
 
 // COMMAND ----------
@@ -98,8 +117,12 @@ df.createOrReplaceTempView("weather")
 
 // COMMAND ----------
 
-// dbutils.notebook.run("test2", 0, Map("city" -> "Rivne"))
-// dbutils.notebook.exit("Success")
+//check if city is in City list (correct name )
+
+// COMMAND ----------
+
+// MAGIC %sql 
+// MAGIC select distinct city from Plant_City where city not in (select  distinct city from all_city_list)
 
 // COMMAND ----------
 
