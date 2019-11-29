@@ -3,7 +3,7 @@
 
 // COMMAND ----------
 
-val type_of_ETL: Int = 1
+val type_of_ETL: Int = 0
 
 // COMMAND ----------
 
@@ -11,7 +11,7 @@ val type_of_ETL: Int = 1
 
 // COMMAND ----------
 
-val type_of_scenario: Int = 1
+val type_of_scenario: Int = 0
 
 // COMMAND ----------
 
@@ -28,10 +28,6 @@ spark.conf.set(
 spark.conf.set(
   "fs.azure.sas.dcd.prdcbwesa01.blob.core.windows.net",
   "https://prdcbwesa01.blob.core.windows.net/dcd?st=2019-09-13T15%3A01%3A24Z&se=2020-03-14T14%3A01%3A00Z&sp=rwdl&sv=2018-03-28&sr=c&sig=aErgDFXTRr3Lj519B4ZtjDHTp%2F3xsXchFqVuS2IAnGc%3D")
-
-// COMMAND ----------
-
-val current_year = "2019"
 
 // COMMAND ----------
 
@@ -57,8 +53,8 @@ val readPath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU/ru_tmp"
 
 // COMMAND ----------
 
-val year_list : Seq[String] = Seq("2019")
-//Seq("2016","2017","2018","2019","2020")
+//val year_list : Seq[String] = Seq("2019")
+val year_list : Seq[String] = Seq("2016","2017","2018","2019","2020")
 
 // COMMAND ----------
 
@@ -76,7 +72,8 @@ df.createOrReplaceTempView("Calendar")
 
 // COMMAND ----------
 
-val city_list = spark.sql("select distinct city from Plant_City")
+//val city_list = spark.sql("select distinct city from Plant_City where city = 'Kostroma' ") //Test delete where !!!
+val city_list = spark.sql("select distinct city from Plant_City ")
 
 // COMMAND ----------
 
@@ -85,15 +82,35 @@ city_plant.createOrReplaceTempView("city_plant")
 
 // COMMAND ----------
 
+val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/Result/weather_ru.csv"
+val file_type = "csv"
+val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
+df.createOrReplaceTempView("weather")
+
+// COMMAND ----------
+
+//check if it's a new city added to Plant_City file
+
+// COMMAND ----------
+
+// MAGIC %sql 
+// MAGIC select distinct city from Plant_City where city not in (select  distinct city from weather)
+
+// COMMAND ----------
+
 // dbutils.notebook.run("test2", 0, Map("city" -> "Rivne"))
 // dbutils.notebook.exit("Success")
+
+// COMMAND ----------
+
+val current_year = "2016"
 
 // COMMAND ----------
 
 if (type_of_scenario == 0) 
 {
     city_list.collect.foreach {
-     (x) => { val status = dbutils.notebook.run("weather_dark_sky", 
+     (x) => { val status = dbutils.notebook.run("weather_dark_sky_search", 
                                  0, 
                                  Map(
                                      "City" -> x.toString().replace("[", "").replace("]", ""),
@@ -228,30 +245,30 @@ val sqldf = spark.sql(sql_query)
 
 // COMMAND ----------
 
-// import com.databricks.WorkflowException
-// import java.io.FileNotFoundException
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
 
-// var Result = "Failure"   
+var Result = "Failure"   
 
-// try {
+try {
  
-// val sql_df = spark.sql(sql_query)
-// sql_df.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
+val sql_df = spark.sql(sql_query)
+sql_df.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
 
-// val name : String = "part-00000"  
-// val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
-// val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/", "")
-// val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
-// dbutils.fs.mv(readPath+"/"+read_name , writePath+"/"+fname)   
-// dbutils.fs.rm(readPath , recurse = true) 
-// if (row_count > 0) Result = "Success" else println("The file " +writePath+"/"+fname + " is empty !" )
-// } 
-// catch {
-//   case e:FileNotFoundException => println("Error, " + e)
-//   case e:WorkflowException  => println("Error, " + e)
-// }
+val name : String = "part-00000"  
+val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
+val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/", "")
+val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
+dbutils.fs.mv(readPath+"/"+read_name , writePath+"/"+fname)   
+dbutils.fs.rm(readPath , recurse = true) 
+if (row_count > 0) Result = "Success" else println("The file " +writePath+"/"+fname + " is empty !" )
+} 
+catch {
+  case e:FileNotFoundException => println("Error, " + e)
+  case e:WorkflowException  => println("Error, " + e)
+}
 
-// dbutils.notebook.exit(Result)
+//dbutils.notebook.exit(Result)
 
 
 
@@ -306,10 +323,10 @@ catch {
 
 // COMMAND ----------
 
-val Result = 
-if (type_of_ETL == 0) exportToBlobStorage(0) 
-else if (type_of_ETL == 1) exportToBlobStorage(1)
-else if (type_of_ETL == 2) {exportToBlobStorage(0); exportToBlobStorage(1) }
-else "Unexpected parameter"
+// val Result = 
+// if (type_of_ETL == 0) exportToBlobStorage(0) 
+// else if (type_of_ETL == 1) exportToBlobStorage(1)
+// else if (type_of_ETL == 2) {exportToBlobStorage(0); exportToBlobStorage(1) }
+// else "Unexpected parameter"
 
-dbutils.notebook.exit(Result)
+// dbutils.notebook.exit(Result)
