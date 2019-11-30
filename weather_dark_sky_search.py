@@ -286,15 +286,20 @@ STORAGEACCOUNTNAME= 'staeeprodbigdataml2c'
 STORAGEACCOUNTKEY= 'EHYumrwso4XLSUHpvLptI33z7mumiZwZOErjrlP8FiW51Bb6NS2PaWJsqW9hsMttbZizgQjUexFZfZDBQJebYw==' 
 CONTAINERNAME= 'prod' if dbutils.widgets.get('CONTAINER_NAME') == '' else dbutils.widgets.get('CONTAINER_NAME')
 
-#geopy.geocoders.options.default_timeout = None
-#geolocator = Nominatim(user_agent="get lat and long")
-#location = geolocator.geocode(city)
+# geopy.geocoders.options.default_timeout = None
+# geolocator = Nominatim(user_agent="get lat and long")
+# location = geolocator.geocode(city)
 
-#lat = location.latitude
-#lng = location.longitude
+# if (city in city_dic_with_geo_clean.keys()):
+#   lat = city_dic_with_geo_clean[city]['lat']
+#   lng = city_dic_with_geo_clean[city]['lon']
+# else:
+#   lat = location.latitude
+#   lng = location.longitude
+
 lat = city_dic_with_geo_clean[city]['lat']
 lng = city_dic_with_geo_clean[city]['lon']
-
+  
 days_in_year =  366 if calendar.isleap(year) else 365 
 #days_in_year = 2 #TEST
 
@@ -337,21 +342,26 @@ if (count_of_records > 0):
     message = message + "\n" + str(m)
     df = pd.DataFrame(data) 
     if ('time' not in df.columns):
-      df = df.withColumn("time", expr("") )
+      df['time'] = ""
     if ('apparentTemperatureMax' not in df.columns):
-      df = df.withColumn("apparentTemperatureMax", expr(""))
+      df['apparentTemperatureMax'] = ""
     if ('cloudCover' not in df.columns ):
-      df = df.withColumn("cloudCover", expr("")) 
+      df['cloudCover'] = ""
     if ('humidity' not in df.columns ):
-      df = df.withColumn("humidity", expr("")) 
+      d['humidity'] = ""
     if ('windSpeed' not in df.columns ):
-      df = df.withColumn("windSpeed", expr(""))
+      df['windSpeed'] = ""
       
-    df = df[["time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
+    if ('time' not in df.columns):
+      df["date"]  = ""
+    else:  
+      df["date"] = (pd.to_datetime(df['time'], unit='s', errors='ignore').dt.date).astype(str)
+    
+    df = df[["time", "date",  "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
   
     nearest_city_list = result[city]
   
-    schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed"
+    schema_string = "time,date,apparentTemperatureMax,cloudCover,humidity,windSpeed"
     mySchema = StructType([StructField(c, StringType()) for c in schema_string.split(",")])
     df_full = spark.createDataFrame(data = df, schema=mySchema)
     
@@ -394,32 +404,37 @@ if (count_of_records > 0):
       if (len(data) > 0) :     
         df = pd.DataFrame(data) 
         if ('time' not in df.columns):
-          df = df.withColumn("time", expr("") )
+          df['time'] = ""
         if ('apparentTemperatureMax' not in df.columns):
-          df = df.withColumn("apparentTemperatureMax", expr(""))
+          df['apparentTemperatureMax'] = ""
         if ('cloudCover' not in df.columns ):
-          df = df.withColumn("cloudCover", expr("")) 
+          df['cloudCover'] = ""
         if ('humidity' not in df.columns ):
-          df = df.withColumn("humidity", expr("")) 
+          d['humidity'] = ""
         if ('windSpeed' not in df.columns ):
-          df = df.withColumn("windSpeed", expr("")) 
+          df['windSpeed'] = "" 
+        
+        if ('time' not in df.columns):
+          df["date"]  = ""
+        else:  
+          df["date"] = (pd.to_datetime(df['time'], unit='s', errors='ignore').dt.date).astype(str)
 
-        df = df[["time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
+        df = df[["time","date", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
         df_s = spark.createDataFrame(df, schema=mySchema)
         #df_s = df_s.select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
         #print("df_s data" +str(df_s.count()) )
 
-        filter_date = df_s.selectExpr("time").exceptAll(df_full.selectExpr("time"))
+        filter_date = df_s.selectExpr("date").exceptAll(df_full.selectExpr("date"))
         #print("filter_date" + str(filter_date.count()) )
       
         list_of_date_clear= list()
         list_of_date = filter_date.toPandas().values.tolist()
         for date in list_of_date:
-          list_of_date_clear.append( int(str(date).replace("[", "").replace("]", "").replace("'", '')) )
+          list_of_date_clear.append( str(date).replace("[", "").replace("]", "").replace("'", '')) 
 
         #print("list " + str(len(list_of_date_clear))) 
 
-        df_new_data = df_s.where(col("time").isin(list_of_date_clear ))
+        df_new_data = df_s.where(col("date").isin(list_of_date_clear ))
         #print("new data " + str(df_new_data.count()))
         m = str(df_new_data.count()) + " records have been added"
         message = message + "\n" + str(m)
@@ -479,7 +494,7 @@ else:
   
   nearest_city_list = result[city]
   
-  schema_string = "time,apparentTemperatureMax,cloudCover,humidity,windSpeed"
+  schema_string = "time,date,apparentTemperatureMax,cloudCover,humidity,windSpeed"
   mySchema = StructType([StructField(c, StringType()) for c in schema_string.split(",")])
   df_full = spark.createDataFrame(data=[], schema=mySchema)
   
@@ -522,33 +537,42 @@ else:
     if (len(data) > 0) :     
       df = pd.DataFrame(data) 
       if ('time' not in df.columns):
-        df = df.withColumn("time", expr("") )
+        df['time'] = ""
       if ('apparentTemperatureMax' not in df.columns):
-        df = df.withColumn("apparentTemperatureMax", expr(""))
+        df['apparentTemperatureMax'] = ""
       if ('cloudCover' not in df.columns ):
-        df = df.withColumn("cloudCover", expr("")) 
+        df['cloudCover'] = ""
       if ('humidity' not in df.columns ):
-        df = df.withColumn("humidity", expr("")) 
+        d['humidity'] = ""
       if ('windSpeed' not in df.columns ):
-        df = df.withColumn("windSpeed", expr("")) 
+        df['windSpeed'] = "" 
+        
+      if ('time' not in df.columns):
+        df["date"]  = ""
+      else:  
+        df["date"] = (pd.to_datetime(df['time'], unit='s', errors='ignore').dt.date).astype(str)
       
-      df = df[["time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
+      
+      df = df[["time","date", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed"]].fillna("")
       df_s = spark.createDataFrame(df, schema=mySchema)
       #df_s = df_s.select("time", "apparentTemperatureMax", "cloudCover", "humidity", "windSpeed") 
       #print("df_s data" +str(df_s.count()) )
       
-      filter_date = df_s.selectExpr("time").exceptAll(df_full.selectExpr("time"))
+      filter_date = df_s.selectExpr("date").exceptAll(df_full.selectExpr("date"))
+          
       #print("filter_date" + str(filter_date.count()) )
       
       list_of_date_clear= list()
       list_of_date = filter_date.toPandas().values.tolist()
       for date in list_of_date:
-        list_of_date_clear.append( int(str(date).replace("[", "").replace("]", "").replace("'", '')) )
-        
+        list_of_date_clear.append(str(date).replace("[", "").replace("]", "").replace("'", "") )
+              
       #print("list " + str(len(list_of_date_clear))) 
         
-      df_new_data = df_s.where(col("time").isin(list_of_date_clear ))
+      df_new_data = df_s.where(col("date").isin(list_of_date_clear ))
+      
       #print("new data " + str(df_new_data.count()))
+      
       m = str(df_new_data.count()) + " records have been added"
       message = message + "\n" + str(m)
     
@@ -578,7 +602,7 @@ else:
   print(m ) 
   message = message  + "\n" + str(m)
 
-dbutils.notebook.exit( message )
+dbutils.notebook.exit( message ) 
 
 
 # COMMAND ----------
