@@ -348,7 +348,7 @@ if (count_of_records > 0):
     if ('cloudCover' not in df.columns ):
       df['cloudCover'] = ""
     if ('humidity' not in df.columns ):
-      d['humidity'] = ""
+      df['humidity'] = ""
     if ('windSpeed' not in df.columns ):
       df['windSpeed'] = ""
       
@@ -410,7 +410,7 @@ if (count_of_records > 0):
         if ('cloudCover' not in df.columns ):
           df['cloudCover'] = ""
         if ('humidity' not in df.columns ):
-          d['humidity'] = ""
+          df['humidity'] = ""
         if ('windSpeed' not in df.columns ):
           df['windSpeed'] = "" 
         
@@ -543,7 +543,7 @@ else:
       if ('cloudCover' not in df.columns ):
         df['cloudCover'] = ""
       if ('humidity' not in df.columns ):
-        d['humidity'] = ""
+        df['humidity'] = ""
       if ('windSpeed' not in df.columns ):
         df['windSpeed'] = "" 
         
