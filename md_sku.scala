@@ -3,7 +3,7 @@
 
 // COMMAND ----------
 
-val type_of_ETL: Int = 1
+val type_of_ETL: Int = 2
 
 // COMMAND ----------
 
