@@ -3,7 +3,7 @@
 
 // COMMAND ----------
 
-val type_of_ETL: Int = 2
+val type_of_ETL: Int = 1
 
 // COMMAND ----------
 
@@ -71,15 +71,12 @@ Alcohol as alcohol_percentage,
 QuantitySKUPan  as number_of_base_units_per_pallet,
 BrandName as brand_name,
 GeneralizedName as subbrand_name,
-ProductSegmentName as price_segment, 
-
-row_number() over ( partition by  int(regexp_replace(if(left(FCBaseWareId,1) = "=", replace(FCBaseWareId,left(FCBaseWareId,1), ''), FCBaseWareId ), "[^0-9.]", ""  ))  
-order by   PouringVolume, Alcohol, if (QuantitySKUPan = "\\N" or QuantitySKUPan = 0 , 1000000, QuantitySKUPan)   ) key2
+ProductSegmentName as price_segment
 
 From (
 
 select 
-if (SKUId= "\\N" or isnull(SKUId), 0,SKUId) as  SKUId , 
+--if (SKUId= "\\N" or isnull(SKUId), 0,SKUId) as  SKUId , 
 --SKUId,
 if (SKUIdGeneralized = "\\N" or isnull(SKUIdGeneralized) , '', SKUIdGeneralized) as SKUIdGeneralized, 
 --SKUIdGeneralized,
@@ -109,17 +106,17 @@ if (isnull(float(TareVolume)), 0, float(TareVolume)) as TareVolume ,
  --float(QuantitySKUPan) as  QuantitySKUPan,
  --float(TareVolume) as TareVolume
  
-row_number() over ( partition by  SKUId  order by   if (QuantitySKUPan = "\\N" or QuantitySKUPan = 0 , 1000000, QuantitySKUPan) ) key
+row_number() over ( partition by  int(regexp_replace(if(left(FCBaseWareId,1) = "=", replace(FCBaseWareId,left(FCBaseWareId,1), ''), FCBaseWareId ), "[^0-9.]", ""  )) 
+order by  PouringVolume desc, Alcohol desc, TareVolume desc, BrandName desc, GeneralizedName desc, MultipackTypeId desc, if (QuantitySKUPan = "\\N" or QuantitySKUPan = 0 , 1000000, QuantitySKUPan) 
+) key
 
 from MD_SKU_TO_TV 
 
-group by SKUId, SKUIdGeneralized, BrandName, GeneralizedName, FCBaseWareId,FCBaseWareName, MultipackTypeId, ProductCategoryId, PouringVolume, Alcohol, QuantitySKUPan, TareVolume, ProductSegmentName
+group by /*SKUId,*/ SKUIdGeneralized, BrandName, GeneralizedName, FCBaseWareId,FCBaseWareName, MultipackTypeId, ProductCategoryId, PouringVolume, Alcohol, QuantitySKUPan, TareVolume, ProductSegmentName
 ) tab
-where tab.key = 1
+where tab.key = 1 
 ) tab
-where tab.key2 = 1 and lead_sku <> 0
-
-
+where lead_sku <> 0
 """)
 
 sqldf.createOrReplaceTempView("result_source_table")
@@ -196,30 +193,33 @@ left join status_info s on r.lead_sku = s.lead_sku
 
 def exportToBlobStorage_Baltika: String = { 
 
-import com.databricks.WorkflowException
-import java.io.FileNotFoundException
+ import com.databricks.WorkflowException
+ import java.io.FileNotFoundException
 
-var Result = "Failure"   
+  var Result = "Failure"   
 
-try {
-sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
+  try {
 
-val name : String = "part-00000"  
-val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
-val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/", "")
-val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
-dbutils.fs.mv(readPath+"/"+read_name , writePath+"/"+fname)   
-dbutils.fs.rm(readPath , recurse = true) 
-if (row_count > 0) Result = "Success" else println("The file " +writePath+"/"+fname + " is empty !" )
-} 
-catch {
-  case e:FileNotFoundException => println("Error, " + e)
-  case e:WorkflowException  => println("Error, " + e)
-}
+  sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
+
+  val name : String = "part-00000"  
+  val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
+  val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/", "")
+  val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
+  dbutils.fs.mv(readPath+"/"+read_name , writePath+"/"+fname)   
+  dbutils.fs.rm(readPath , recurse = true) 
+  if (row_count > 0) Result = "Success" else println("The file " +writePath+"/"+fname + " is empty !" )
+  } 
+  catch {
+    case e:FileNotFoundException => println("Error, " + e)
+    case e:WorkflowException  => println("Error, " + e)
+  }
+
+    Result
+
+  }
   
-  Result
 
-}
 //dbutils.notebook.exit(Result)
 
 
