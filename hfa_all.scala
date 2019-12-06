@@ -1,10 +1,42 @@
 // Databricks notebook source
-//Configuration
+//Type of ETL: 0 (only Baltika ) 1 (only CAP) 2 (Both)
+
+// COMMAND ----------
+
+val type_of_ETL: Int = 2
+
+// COMMAND ----------
+
+//Type of data extraction: 0 (full) , 1 (incremental )
+
+// COMMAND ----------
+
+val type_of_data_extract: Int = 0
+
+// COMMAND ----------
+
+// The range of month in case of incremental loading (only if type_of_data_extract = 1 !!! )
+
+// COMMAND ----------
+
+val num_of_days_before_current_date: Int = 30 //number of day before current date
+//val num_of_days_after_current_date: Int = 30  //number of day after current date
+
+// COMMAND ----------
+
+//Configuration (Baltika)
 val storage_account_name = "staeeprodbigdataml2c"
 val storage_account_access_key = "EHYumrwso4XLSUHpvLptI33z7mumiZwZOErjrlP8FiW51Bb6NS2PaWJsqW9hsMttbZizgQjUexFZfZDBQJebYw=="
 spark.conf.set(
   "fs.azure.account.key."+storage_account_name+".blob.core.windows.net",
   storage_account_access_key)
+
+// COMMAND ----------
+
+//Configuration (CAP)
+spark.conf.set(
+  "fs.azure.sas.dcd.prdcbwesa01.blob.core.windows.net",
+  "https://prdcbwesa01.blob.core.windows.net/dcd?st=2019-09-13T15%3A01%3A24Z&se=2020-03-14T14%3A01%3A00Z&sp=rwdl&sv=2018-03-28&sr=c&sig=aErgDFXTRr3Lj519B4ZtjDHTp%2F3xsXchFqVuS2IAnGc%3D")
 
 // COMMAND ----------
 
@@ -19,6 +51,7 @@ spark.conf.set( "spark.sql.shuffle.partitions", 100)
 val readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
 val writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/Result" //ETL/Result //etl_fbkp
 val writePath_tmp = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/tmp"
+val writePath_СAP = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/export_to_CAP"
 val fname = "HFA_RU_All.csv"
 //val fname = "test_.csv"
 val fname_tmp = "HFA_RU_tmp_All.csv"
@@ -26,6 +59,15 @@ val fname_tmp_promo = "HFA_RU_tmp_All_promo.csv"
 val fname_tmp_uplift = "HFA_RU_tmp_All_promo_uplift.csv"
 val file_location_path = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/"
 val file_location_path_tmp = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/tmp"
+
+// COMMAND ----------
+
+//constants (CAP)
+
+// COMMAND ----------
+
+val writePath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU" 
+val readPath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU/ru_tmp" 
 
 // COMMAND ----------
 
@@ -1087,103 +1129,6 @@ println("temp promo table has been created with status: " + Result )
 
 // COMMAND ----------
 
-//for promo file with uplifts
-
-// COMMAND ----------
-
-// var Result = "Failure"  
-// val sqldf = spark.sql("""  
-
-// select 
-// tab.country_name, tab.calendar_yearmonth, tab.calendar_yearweek, tab.load_week, tab.lead_sku,  tab.customer_planning_group, 
-
-// --if (isnull(tab.format) or tab.format = "\\N", 'LKA',tab.format)
-
-// if (
-// tab.customer_planning_group = 'X5 Retail Group' or tab.customer_planning_group = 'Магнит (Тандер)' ,  
-//   tab.format, 
-//   if(isnull(cpgf.format) or cpgf.format = "\\N" or cpgf.format = 'Локальные клиенты' , 'LKA', if (right(cpgf.format,1) = 'ы', replace(cpgf.format,right(cpgf.format,1), '' ), cpgf.format ) )
-//   )
-// format, 
-
-// --concat(tab.customer_planning_group, '_', if (isnull(tab.format) or tab.format = "\\N", 'LKA',tab.format)) as cpg_format,
-
-// concat(tab.customer_planning_group, '_', 
-
-// if (
-// tab.customer_planning_group = 'X5 Retail Group' or tab.customer_planning_group = 'Магнит (Тандер)' ,  
-//   tab.format, 
-//   if(isnull(cpgf.format) or cpgf.format = "\\N" or cpgf.format = 'Локальные клиенты' , 'LKA', if (right(cpgf.format,1) = 'ы', replace(cpgf.format,right(cpgf.format,1), '' ), cpgf.format ) )
-//   )
-// ) cpg_format,
-
-
-// tab.plant, tab.division, tab.activation_code, tab.number_of_promo, tab.mechanism, if (isnull(tab.length_promo),0,tab.length_promo) length_promo  , if (isnull(tab.shelf_discount), 0, tab.shelf_discount ) shelf_discount , if (isnull(tab.discount), 0,tab.discount) discount , tab.open_orders_promo, tab.open_orders, tab.total_sales_volume as total_shipments, tab.total_shipments_volume_hl as total_shipments_volume, tab.benchmark_forecast
-
-// from (
-// select 
-// tab.country_name, tab.calendar_yearmonth, tab.calendar_yearweek, tab.load_week, tab.lead_sku,  tab.customer_planning_group, 
-
-// if (tab.format = 'не определено' and tab.customer_planning_group = 'Дикси', 'Супермаркет', 
-//   if (tab.format = 'не определено' and tab.customer_planning_group = 'Бристоль', 'Супермаркет',
-//     if (tab.format = 'не определено' and tab.customer_planning_group = 'Семья', 'LKA', 
-//       if (tab.format = 'не определено' and tab.customer_planning_group = 'Красное и Белое', 'Супермаркет',
-//         if (tab.format = 'не определено' and tab.customer_planning_group = 'X5 Retail Group', 'Минимаркет',
-//           if (tab.format = 'не определено' and tab.customer_planning_group = 'METRO', 'Гипермаркет', 
-//             if (tab.format = 'не определено' and tab.customer_planning_group = 'Лента', 'Гипермаркет',
-//               if(tab.format = 'не определено' and tab.customer_planning_group = 'Магнит (Тандер)', 'Минимаркет', 
-//                 tab.format
-//               )))))))) format
-
-// , tab.plant, tab.division, tab.activation_code, tab.number_of_promo, tab.mechanism, tab.length_promo, tab.shelf_discount, tab.discount, tab.open_orders_promo, tab.open_orders, tab.total_sales_volume, tab.total_shipments_volume_hl, tab.benchmark_forecast
-
-
-// from (
-// select 
-// r.* ,if ( ( r.format <> 'Минимаркет' and (r.customer_planning_group = 'Магнит (Тандер)' or r.customer_planning_group = 'X5 Retail Group') ) , 0 , fc.benchmark_forecast) as benchmark_forecast
-// from 
-//   (
-  
-//     select tab.country_name, tab.calendar_yearmonth, tab.calendar_yearweek, tab.load_week, tab.lead_sku,  tab.customer_planning_group, tab.format, tab.plant, tab.division, tab.activation_code, tab.number_of_promo, tab.mechanism, tab.length_promo, tab.shelf_discount, tab.discount, tab.open_orders_promo, tab.open_orders, tab.total_sales_volume,  tab.total_shipments_volume_hl
-//     from
-//     (select *, row_number() over ( 
-//     partition by  calendar_yearweek, load_week ,  lead_sku, customer_planning_group, format, plant, division  
-//     order by activation_code desc ) number_of_promo from Result
-//     ) tab
-//     --where tab.number_of_promo = 1 --при этом строки файла HFA задублируются по полю ActivationID. Добавить номер промо на объекте для проверки итоговых сумм
-  
-//   union 
-  
-//   select * from Result_hist
-//   ) r
-// left join FC_main fc on 
-// r.calendar_yearweek = fc.calendar_yearweek and
-// r.lead_sku = fc.lead_sku and
-// r.plant = fc.plant and
-// r.customer_planning_group = fc.client
-// ) tab
-//   )tab  
-  
-//   left join CPG_Formats cpgf on  tab.customer_planning_group = cpgf.CPG
-  
-// """)
-
-// sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
-
-// val name : String = "part-00000"  
-// val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
-// val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/", "")
-// val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
-// dbutils.fs.mv(readPath+"/"+read_name , writePath_tmp+"/"+fname_tmp_promo)   
-// dbutils.fs.rm(readPath , recurse = true) 
-// if (row_count > 0) Result = "Success" else println("The file " +writePath_tmp+"/"+fname_tmp_promo + " is empty !" )
-// println("temp promo table has been created with status: " + Result )
-
-
-// //sqldf.createOrReplaceTempView("result_hfa_table")
-
-// COMMAND ----------
-
 //HFA_RU_tmp
 
 // COMMAND ----------
@@ -1192,17 +1137,6 @@ val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL
 val file_type = "csv"
 val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
 df.createOrReplaceTempView("result_hfa_table")
-
-// COMMAND ----------
-
-//HFA_RU_tmp for promo with uplifts
-
-// COMMAND ----------
-
-// val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/tmp/HFA_RU_tmp_All_promo.csv"
-// val file_type = "csv"
-// val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-// df.createOrReplaceTempView("result_hfa_table_promo")
 
 // COMMAND ----------
 
@@ -1375,14 +1309,8 @@ sqldf.createOrReplaceTempView("uplift_info")
 
 // COMMAND ----------
 
-import com.databricks.WorkflowException
-import java.io.FileNotFoundException
-
-var Result = "Failure"   
-
-try {
-val sqldf = spark.sql(
-  """
+val query_full = 
+  """ 
   select distinct
   s.*,
   
@@ -1529,12 +1457,30 @@ val sqldf = spark.sql(
     s.customer_planning_group = upi.customer_planning_group and
     s.lead_sku = upi.lead_sku and 
     s.format = upi.format and 
-    s.plant = upi.plant
-    
+    s.plant = upi.plant   
+      
+  """ 
   
-  """
-  )
-sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
+
+// COMMAND ----------
+
+val sqldf_full = spark.sql(query_full)
+
+// COMMAND ----------
+
+//Export to ETL\Result
+
+// COMMAND ----------
+
+def exportToBlobStorage_Baltica : String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
+
+var Result = "Failure"   
+
+try {
+sqldf_full.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
 
 val name : String = "part-00000"  
 val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
@@ -1548,190 +1494,242 @@ catch {
   case e:FileNotFoundException => println("Error, " + e)
   case e:WorkflowException  => println("Error, " + e)
 }
+  
+  Result
+
+}
+//dbutils.notebook.exit(Result)
+
+
+
+// COMMAND ----------
+
+//Export to CAP
+
+// COMMAND ----------
+
+val query_incremental = 
+  s"""
+  select *
+  from (
+  
+  select distinct
+  s.calendar_yearmonth as partition_name, s.*,
+  
+  if (isnull(METRO_super_Wednesday_info.METRO_super_Wednesday) , 0,  METRO_super_Wednesday_info.METRO_super_Wednesday ) METRO_super_Wednesday,
+  
+  if (s.customer_planning_group = 'X5 Retail Group' and rp.MTP is not null and isnull(rp.Lok), 1, 0) X5_MTP,
+  if (s.customer_planning_group = 'X5 Retail Group' and rp.MTP is not null and rp.Lok is not null , 1, 0) X5_MTP_Loc,
+  if (s.customer_planning_group = 'X5 Retail Group' and rp.OTP is not null and isnull(rp.Lok), 1, 0) X5_OTP,
+  if (s.customer_planning_group = 'X5 Retail Group' and rp.OTP is not null and rp.Lok is not null, 1, 0) X5_OTP_Loc,
+ 
+  if (pac.promo_activities_of_competitors is null, 0, pac.promo_activities_of_competitors) promo_activities_of_competitors ,
+  
+  if (MBO_info.MBO is null, 0, MBO_info.MBO) mbo_programs,
+  
+  replace(coalesce(seas_coef_info.Seas_coef , seas_coef_info_core.Seas_coef), ',', '.' ) seas_coef,
+  
+  dbp.distance_between_promotions,
+  
+  aoi.auto_orders,
+  
+  upi.uplift_hl
+  
+  from result_hfa_table s 
+  
+  left join 
+  
+  ( 
+  select tab.activation_id , 1 as METRO_super_Wednesday
+  from (
+  select
+  ac.Client, ac.ActivationID activation_id, ac.mechanik, ac.in_voice, ac.format, ac.end_action , ac.begin_action , ac.DeliveryType delivery_type
+  , ac.mechanik_new, ac.start_orders, ac.end_orders , st.weekid weekid_st, ed.weekid weekid_end,
+  datediff(end_action , begin_action)+1 length_promo ,
+  max(if (ac.shelf_discount = "\\N" or ac.shelf_discount is null, 0, ac.shelf_discount )) shelf_discount , 
+  max(if (ac.discount = "\\N" or ac.discount is null, 0, ac.discount )) discount,
+  sum(Forecast_Volume) forecast_volume, cl.DayOfWeek_Num,
+  row_number() over ( partition by   ac.ActivationID   order by if(isnull(sum(Forecast_Volume)),0, sum(Forecast_Volume)) desc ) act_rank
+
+  from  Action ac 
+  left join calendar st on  year(ac.start_orders)*10000 +month(ac.start_orders)*100 + day(ac.start_orders)  = st.DateKey
+  left join calendar ed on  year(ac.end_orders)*10000 +month(ac.end_orders)*100 + day(ac.end_orders)  = ed.DateKey
+  left join calendar cl on  year(ac.end_action)*10000 +month(ac.end_action)*100 + day(ac.end_action) = cl.DateKey
+  where 
+  year(ac.start_orders) >=2015 --!!!
+  and ac.DeliveryType = 'DSD'
+  group by 
+  ac.ActivationID, ac.Mechanik, ac.In_voice, ac.Format, ac.end_action , ac.begin_action ,ac.Mechanik_new, ac.start_orders, ac.end_orders , st.weekid, ed.weekid , ac.DeliveryType, cl.DayOfWeek_Num, ac.Client
+  ) tab
+  where tab.act_rank = 1  and tab.length_promo = 1 and tab.DayOfWeek_Num = 3 and tab.client = 'METRO'
+  
+  )METRO_super_Wednesday_info 
+  on 
+  s.activation_code = METRO_super_Wednesday_info.activation_id   
+  
+  left join
+  
+  (
+  select distinct Activ_id,  Comment ,
+  if ( position("Лок", Comment ) > 0 ,substring (Comment, position("Лок", Comment ),  +3), null ) Lok ,   
+  if ( position("ОТП", Comment ) > 0 ,substring (Comment, position("ОТП", Comment ),  +3), null ) OTP , 
+  if ( position("МТП", Comment ) > 0 ,substring (Comment, position("МТП", Comment ),  +3), null ) MTP 
+  from rp_patch 
+  ) rp 
+  on s.activation_code = rp.Activ_id
+  
+  left join promo_activities_of_Competitors_info pac 
+  on 
+  s.plant = pac.plant and 
+  s.lead_sku = pac.lead_sku and
+  s.calendar_yearweek = pac.calendar_yearweek 
+  
+  left join MBO_info 
+  on 
+  s.customer_planning_group = MBO_info.customer_planning_group and 
+  s.lead_sku = MBO_info.lead_sku and
+  s.calendar_yearweek = MBO_info.calendar_yearweek 
+  
+   left join 
+  
+  (
+   select distinct lead_sku, subbrand_name subbrand  from MD_SKU_RU
+   ) Subbrand_info
+  
+   on s.lead_sku = Subbrand_info.lead_sku
+  
+  left join 
+  
+   (
+   select distinct MonthId, int(right(MonthId, 2))  month_num
+   from calendar 
+   ) month_num_info
+  
+   on s.calendar_yearmonth = month_num_info.MonthId
+
+   left join 
+   
+   (select distinct s.Subbrand,  s.Month, s.Seas_coef, d.Division division_correct 
+   from seas_coef s left join divisions d on s.Division = d.Region_Bi
+   ) seas_coef_info 
+   on 
+
+   Subbrand_info.Subbrand = seas_coef_info.Subbrand and 
+   s.division = seas_coef_info.division_correct and
+   month_num_info.month_num = seas_coef_info.Month 
+  
+   left join 
+   (select distinct  s.Month, s.Seas_coef, d.Division division_correct 
+   from seas_coef s left join divisions d on s.Division = d.Region_Bi
+   where s.Category = 'Core' 
+   ) seas_coef_info_core 
+   on
+  
+   s.division = seas_coef_info_core.division_correct and
+   month_num_info.month_num = seas_coef_info_core.Month 
+   
+   left join 
+    (
+    select 
+    activation_code, plant, lead_sku, customer_planning_group, distance_between_promotions
+    from (
+    select * , row_number() over (partition by activation_code, plant, lead_sku, customer_planning_group order by distance_between_promotions   ) row_num
+    from distance_between_promotions_info_hfa 
+    ) tab
+    where row_num = 1
+    ) dbp 
+    on 
+    s.activation_code = dbp.activation_code and
+    s.plant = dbp.plant and 
+    s.lead_sku = dbp.lead_sku and
+    --s.calendar_yearweek = dbp.calendar_yearweek and
+    s.customer_planning_group = dbp.customer_planning_group
+    
+    left join auto_orders_info aoi 
+    on 
+    s.customer_planning_group = aoi.customer_planning_group and 
+    s.calendar_yearweek = aoi.calendar_yearweek and 
+    s.lead_sku = aoi.lead_sku and
+    s.plant = aoi.plant 
+    
+    left join uplift_info upi  
+    on 
+    s.activation_code = upi.activation_code and
+    s.calendar_yearweek = upi.calendar_yearweek and
+    s.customer_planning_group = upi.customer_planning_group and
+    s.lead_sku = upi.lead_sku and 
+    s.format = upi.format and 
+    s.plant = upi.plant   
+    
+    )tab
+  """ +
+{if (type_of_data_extract == 1) 
+ s""" 
+ where calendar_yearmonth >= 
+ year(date_add(current_date(),-1 * $num_of_days_before_current_date))*100 + month(date_add(current_date(),-1 * $num_of_days_before_current_date))
+ """ 
+ else ""}
+  
+
+// COMMAND ----------
+
+val sqldf_incremental = spark.sql(query_incremental)
+
+// COMMAND ----------
+
+def exportToBlobStorage (type_of_ETL:Int): String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
+
+var Result = "Failure" 
+val partition_field = "partition_name"
+val export_format = "com.databricks.spark.csv"
+val export_delimiter = Character.toString(7.toChar)
+
+var readPath_ETL = if (type_of_ETL == 0) readPath else if (type_of_ETL == 1) readPath_GBS else null
+var writePath_ETL= if (type_of_ETL == 0) writePath_СAP else if (type_of_ETL == 1) writePath_GBS else null
+
+try {
+  sqldf_incremental
+  .coalesce(1)
+  .write.mode("overwrite")
+  .format(export_format)
+  .option("header", "true")
+  .option("inferSchema", "true")
+  .option("delimiter", export_delimiter)
+  .partitionBy(partition_field)
+  .save(readPath_ETL)
+
+  val name : String = "part-00000"   
+  val path_list : Seq[String] = dbutils.fs.ls(readPath_ETL).map(_.path).filter(_.contains(partition_field))
+
+  for (path <- path_list) {
+   var partition_name = path.replace(readPath_ETL + "/" + partition_field + "=", "").replace("/", "")
+   var file_list : Seq[String] = dbutils.fs.ls(path).map(_.path).filter(_.contains(name)) 
+   var read_name =  if (file_list.length >= 1 ) file_list(0).replace(path + "/", "") 
+   var fname = "HFADIRECT_" + partition_name + "_RU_DCD"+ ".csv" 
+   dbutils.fs.mv(read_name.toString , writePath_ETL+"/"+fname) 
+    }
+  dbutils.fs.rm(readPath_ETL , recurse = true) 
+  Result = "Success" 
+  } 
+catch {
+    case e:FileNotFoundException => println("Error, " + e)
+    case e:WorkflowException  => println("Error, " + e)
+  }
+
+  Result
+}
+
+
+
+// COMMAND ----------
+
+val Result = 
+if (type_of_ETL == 0) { if ( exportToBlobStorage_Baltica == "Success" && exportToBlobStorage(0) == "Success" ) "Success" else "Failure"  }
+else if (type_of_ETL == 1) exportToBlobStorage(1)
+else if (type_of_ETL == 2) { if ( exportToBlobStorage_Baltica == "Success" && exportToBlobStorage(0) == "Success" && exportToBlobStorage(1) == "Success") "Success" else  "Failure"  }
+else "Unexpected parameter"
 
 dbutils.notebook.exit(Result)
-
-
-
-// COMMAND ----------
-
-//Features for promo with Uplifts
-
-// COMMAND ----------
-
-// import com.databricks.WorkflowException
-// import java.io.FileNotFoundException
-
-// var Result = "Failure"   
-
-// try {
-// val sqldf = spark.sql(
-//   """
-//   select distinct
-//   s.*,
-  
-//   if (isnull(METRO_super_Wednesday_info.METRO_super_Wednesday) , 0,  METRO_super_Wednesday_info.METRO_super_Wednesday ) METRO_super_Wednesday,
-  
-//   if (s.customer_planning_group = 'X5 Retail Group' and rp.MTP is not null and isnull(rp.Lok), 1, 0) X5_MTP,
-//   if (s.customer_planning_group = 'X5 Retail Group' and rp.MTP is not null and rp.Lok is not null , 1, 0) X5_MTP_Loc,
-//   if (s.customer_planning_group = 'X5 Retail Group' and rp.OTP is not null and isnull(rp.Lok), 1, 0) X5_OTP,
-//   if (s.customer_planning_group = 'X5 Retail Group' and rp.OTP is not null and rp.Lok is not null, 1, 0) X5_OTP_Loc,
- 
-//   if (pac.promo_activities_of_competitors is null, 0, pac.promo_activities_of_competitors) promo_activities_of_competitors ,
-  
-//   if (MBO_info.MBO is null, 0, MBO_info.MBO) mbo_programs,
-  
-//   replace(coalesce(seas_coef_info.Seas_coef , seas_coef_info_core.Seas_coef), ',', '.' ) seas_coef,
-  
-//   dbp.distance_between_promotions,
-  
-//   aoi.auto_orders,
-  
-//   upi.uplift_hl
-  
-//   from result_hfa_table_promo s 
-  
-//   left join 
-  
-//   ( 
-//   select tab.activation_id , 1 as METRO_super_Wednesday
-//   from (
-//   select
-//   ac.Client, ac.ActivationID activation_id, ac.mechanik, ac.in_voice, ac.format, ac.end_action , ac.begin_action , ac.DeliveryType delivery_type
-//   , ac.mechanik_new, ac.start_orders, ac.end_orders , st.weekid weekid_st, ed.weekid weekid_end,
-//   datediff(end_action , begin_action)+1 length_promo ,
-//   max(if (ac.shelf_discount = "\\N" or ac.shelf_discount is null, 0, ac.shelf_discount )) shelf_discount , 
-//   max(if (ac.discount = "\\N" or ac.discount is null, 0, ac.discount )) discount,
-//   sum(Forecast_Volume) forecast_volume, cl.DayOfWeek_Num,
-//   row_number() over ( partition by   ac.ActivationID   order by if(isnull(sum(Forecast_Volume)),0, sum(Forecast_Volume)) desc ) act_rank
-
-//   from  Action ac 
-//   left join calendar st on  year(ac.start_orders)*10000 +month(ac.start_orders)*100 + day(ac.start_orders)  = st.DateKey
-//   left join calendar ed on  year(ac.end_orders)*10000 +month(ac.end_orders)*100 + day(ac.end_orders)  = ed.DateKey
-//   left join calendar cl on  year(ac.end_action)*10000 +month(ac.end_action)*100 + day(ac.end_action) = cl.DateKey
-//   where 
-//   year(ac.start_orders) >=2015 --!!!
-//   and ac.DeliveryType = 'DSD'
-//   group by 
-//   ac.ActivationID, ac.Mechanik, ac.In_voice, ac.Format, ac.end_action , ac.begin_action ,ac.Mechanik_new, ac.start_orders, ac.end_orders , st.weekid, ed.weekid , ac.DeliveryType, cl.DayOfWeek_Num, ac.Client
-//   ) tab
-//   where tab.act_rank = 1  and tab.length_promo = 1 and tab.DayOfWeek_Num = 3 and tab.client = 'METRO'
-  
-//   )METRO_super_Wednesday_info 
-//   on 
-//   s.activation_code = METRO_super_Wednesday_info.activation_id   
-  
-//   left join
-  
-//   (
-//   select distinct Activ_id,  Comment ,
-//   if ( position("Лок", Comment ) > 0 ,substring (Comment, position("Лок", Comment ),  +3), null ) Lok ,   
-//   if ( position("ОТП", Comment ) > 0 ,substring (Comment, position("ОТП", Comment ),  +3), null ) OTP , 
-//   if ( position("МТП", Comment ) > 0 ,substring (Comment, position("МТП", Comment ),  +3), null ) MTP 
-//   from rp_patch 
-//   ) rp 
-//   on s.activation_code = rp.Activ_id
-  
-//   left join promo_activities_of_Competitors_info pac 
-//   on 
-//   s.plant = pac.plant and 
-//   s.lead_sku = pac.lead_sku and
-//   s.calendar_yearweek = pac.calendar_yearweek 
-  
-//   left join MBO_info 
-//   on 
-//   s.customer_planning_group = MBO_info.customer_planning_group and 
-//   s.lead_sku = MBO_info.lead_sku and
-//   s.calendar_yearweek = MBO_info.calendar_yearweek 
-  
-//    left join 
-  
-//   (
-//    select distinct lead_sku, subbrand_name subbrand  from MD_SKU_RU
-//    ) Subbrand_info
-  
-//    on s.lead_sku = Subbrand_info.lead_sku
-  
-//   left join 
-  
-//    (
-//    select distinct MonthId, int(right(MonthId, 2))  month_num
-//    from calendar 
-//    ) month_num_info
-  
-//    on s.calendar_yearmonth = month_num_info.MonthId
-
-//    left join 
-   
-//    (select distinct s.Subbrand,  s.Month, s.Seas_coef, d.Division division_correct 
-//    from seas_coef s left join divisions d on s.Division = d.Region_Bi
-//    ) seas_coef_info 
-//    on 
-
-//    Subbrand_info.Subbrand = seas_coef_info.Subbrand and 
-//    s.division = seas_coef_info.division_correct and
-//    month_num_info.month_num = seas_coef_info.Month 
-  
-//    left join 
-//    (select distinct  s.Month, s.Seas_coef, d.Division division_correct 
-//    from seas_coef s left join divisions d on s.Division = d.Region_Bi
-//    where s.Category = 'Core' 
-//    ) seas_coef_info_core 
-//    on
-  
-//    s.division = seas_coef_info_core.division_correct and
-//    month_num_info.month_num = seas_coef_info_core.Month 
-   
-//    left join 
-//     (
-//     select 
-//     activation_code, plant, lead_sku, customer_planning_group, distance_between_promotions
-//     from (
-//     select * , row_number() over (partition by activation_code, plant, lead_sku, customer_planning_group order by distance_between_promotions   ) row_num
-//     from distance_between_promotions_info_hfa 
-//     ) tab
-//     where row_num = 1
-//     ) dbp 
-//     on 
-//     s.activation_code = dbp.activation_code and
-//     s.plant = dbp.plant and 
-//     s.lead_sku = dbp.lead_sku and
-//     --s.calendar_yearweek = dbp.calendar_yearweek and
-//     s.customer_planning_group = dbp.customer_planning_group
-    
-//     left join auto_orders_info aoi 
-//     on 
-//     s.customer_planning_group = aoi.customer_planning_group and 
-//     s.calendar_yearweek = aoi.calendar_yearweek and 
-//     s.lead_sku = aoi.lead_sku and
-//     s.plant = aoi.plant 
-    
-//     left join uplift_info upi  
-//     on 
-//     s.activation_code = upi.activation_code and
-//     s.calendar_yearweek = upi.calendar_yearweek and
-//     s.customer_planning_group = upi.customer_planning_group and
-//     s.lead_sku = upi.lead_sku and 
-//     s.format = upi.format and 
-//     s.plant = upi.plant
-    
-  
-//   """
-//   )
-// sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
-
-// val name : String = "part-00000"  
-// val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
-// val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/", "")
-// val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
-// dbutils.fs.mv(readPath+"/"+read_name , writePath_tmp+"/"+fname_tmp_uplift)   
-// dbutils.fs.rm(readPath , recurse = true) 
-// if (row_count > 0) Result = "Success" else println("The file " +writePath_tmp+"/"+fname_tmp_uplift + " is empty !" )
-// } 
-// catch {
-//   case e:FileNotFoundException => println("Error, " + e)
-//   case e:WorkflowException  => println("Error, " + e)
-// }
-
-// dbutils.notebook.exit(Result)
-
