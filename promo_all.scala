@@ -1,5 +1,30 @@
 // Databricks notebook source
-//Configuration
+//Type of ETL: 0 (only Baltika ) 1 (only CAP) 2 (Both)
+
+// COMMAND ----------
+
+val type_of_ETL: Int = 2
+
+// COMMAND ----------
+
+//Type of data extraction: 0 (full) , 1 (incremental )
+
+// COMMAND ----------
+
+val type_of_data_extract: Int = 0
+
+// COMMAND ----------
+
+// The range of month in case of incremental loading (only if type_of_data_extract = 1 !!! )
+
+// COMMAND ----------
+
+val num_of_days_before_current_date: Int = 30 //number of day before current date
+//val num_of_days_after_current_date: Int = 30  //number of day after current date
+
+// COMMAND ----------
+
+//Configuration (Baltika)
 val storage_account_name = "staeeprodbigdataml2c"
 val storage_account_access_key = "EHYumrwso4XLSUHpvLptI33z7mumiZwZOErjrlP8FiW51Bb6NS2PaWJsqW9hsMttbZizgQjUexFZfZDBQJebYw=="
 spark.conf.set(
@@ -8,17 +33,34 @@ spark.conf.set(
 
 // COMMAND ----------
 
-//constants
+//Configuration (CAP)
+spark.conf.set(
+  "fs.azure.sas.dcd.prdcbwesa01.blob.core.windows.net",
+  "https://prdcbwesa01.blob.core.windows.net/dcd?st=2019-09-13T15%3A01%3A24Z&se=2020-03-14T14%3A01%3A00Z&sp=rwdl&sv=2018-03-28&sr=c&sig=aErgDFXTRr3Lj519B4ZtjDHTp%2F3xsXchFqVuS2IAnGc%3D")
+
+// COMMAND ----------
+
+//constants (Baltika)
 
 // COMMAND ----------
 
 val readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
 val writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/Result" // //etl_fbkp
 val writePath_tmp = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/tmp" 
+val writePath_СAP = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/export_to_CAP"
 val fname = "Sell_in_Promo_RU_p2_with_formats_All.csv"
 //val fname = "test2_.csv"
 val fname_tmp = "Sell_in_Promo_RU_p2_with_formats_tmp_All.csv"
 val file_location_path = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/"
+
+// COMMAND ----------
+
+//constants (CAP)
+
+// COMMAND ----------
+
+val writePath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU" 
+val readPath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU/ru_tmp" 
 
 // COMMAND ----------
 
@@ -132,17 +174,6 @@ df.createOrReplaceTempView("MD_SKU_RU")
 
 // COMMAND ----------
 
-//MD_SKU_TO
-
-// COMMAND ----------
-
-// val file_location = file_location_path + "MD_SKU_TO.csv"
-// val file_type = "csv"
-// val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-// df.createOrReplaceTempView("MD_SKU_TO")
-
-// COMMAND ----------
-
 //seas_sku
 
 // COMMAND ----------
@@ -184,28 +215,6 @@ val file_location = writePath  +"/" +  "Sell_in_RU_p2_with_formats_All.csv"
 val file_type = "csv"
 val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
 df.createOrReplaceTempView("Sell_in_RU_p2_with_formats")
-
-// COMMAND ----------
-
-//PromoDSD.csv
-
-// COMMAND ----------
-
-// val file_location = file_location_path +  "PromoDSD_All.csv"
-// val file_type = "csv"
-// val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-// df.createOrReplaceTempView("PromoDSD")
-
-// COMMAND ----------
-
-//PromoDRP
-
-// COMMAND ----------
-
-// val file_location = file_location_path + "PromoDRP.csv"
-// val file_type = "csv"
-// val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-// df.createOrReplaceTempView("PromoDRP")
 
 // COMMAND ----------
 
@@ -904,150 +913,7 @@ hu.createOrReplaceTempView("future_uplift_filter")
 
 // COMMAND ----------
 
-//future uplift
-
-// COMMAND ----------
-
-// val sqldf = spark.sql("""
-// select 
-// /*week_forecast, date_format(week_forecast, 'dd.MM.yy') as week_forecast_key,*/ Calendar.WeekId,  SKU_name, SGP, Client_name, 
-
-// --if (Format_TT = "\\N" or isnull(Format_TT),"не определено", Format_TT ) Format_TT , 
-
-// if ( Client_name = 'X5 Retail Group' or Client_name = 'Магнит (Тандер)', 
-//   /*'Минимаркет'*/
-//  if( (Format_TT <> 'Гипермаркет'  and Format_TT <> 'Супермаркет') or Format_TT is null, 'Минимаркет', Format_TT)  , 
-//  if(isnull(cpgf.format) or cpgf.format = "\\N" or cpgf.format = 'Локальные клиенты' , 'LKA', if (right(cpgf.format,1) = 'ы', replace(cpgf.format,right(cpgf.format,1), '' ), cpgf.format ) )
-// ) as Format_TT, 
-
-// ActivationID, sum (Promo_week) Promo_week, sum (BL_week) BL_week
-// from PromoDSD 
-// left join Calendar on week_forecast = Calendar.DayName --on date_format(week_forecast, 'dd.MM.yy') = Calendar.Week
-// left join CPG_Formats cpgf on  Client_name = cpgf.CPG
-// where client_name in  (select distinct customer_planning_group from Sell_in_RU_p2_with_formats )
-// group by /*week_forecast,*/ Calendar.WeekId,  SKU_name, SGP, Client_name, Format_TT, ActivationID, cpgf.format
-
-// union 
-
-// --PromoDRP
-
-// select 
-// /*cast(to_date(cl.Week, 'dd.MM.yy') as timestamp) week_forecast  ,cl.Week week_forecast_key ,*/ cl.WeekId,  drp.SKU SKU_name, drp.SGP, drp.Client_Name, 
-
-// --drp.Format Format_TT, 
-
-// if ( Client_name = 'X5 Retail Group' or Client_name = 'Магнит (Тандер)', 
-//   /*'Минимаркет'*/
-//  if( (drp.Format <> 'Гипермаркет' and drp.Format <> 'Супермаркет') or drp.Format is null, 'Минимаркет', drp.Format) , 
-//  if(isnull(cpgf.format) or cpgf.format = "\\N" or cpgf.format = 'Локальные клиенты' , 'LKA', if (right(cpgf.format,1) = 'ы', replace(cpgf.format,right(cpgf.format,1), '' ), cpgf.format ) )
-// ) as Format_TT, 
-
-// drp.Activ_code ActivationID, sum (Whs_FC_vol)  Promo_week, null BL_week
-// from PromoDRP drp 
-// left join Calendar cl on  cast(to_date(drp.Date , 'dd.MM.yyyy') as timestamp) = cl.DayName
-// left join CPG_Formats cpgf on  Client_name = cpgf.CPG
-// where 
-// drp.client_name in  (select distinct customer_planning_group from Sell_in_RU_p2_with_formats )
-// and drp.Activ_code = 200 or drp.Activ_code = 500
-// group by /*cl.Week,*/cl.WeekId, drp.SKU, drp.SGP, drp.Client_Name, drp.Format, drp.Activ_code, cpgf.format
-
-// """)
-// sqldf.createOrReplaceTempView("promoDSD_info")  
-
-// COMMAND ----------
-
-// val sqldf = spark.sql("""
-// select FCBaseWareName, FCBaseWareId , int(if(left(FCBaseWareId,1) = "=", replace(FCBaseWareId,left(FCBaseWareId,1), ''), FCBaseWareId ))as Lead_SKU_ID
-// from MD_SKU_TO 
-// group by FCBaseWareName, FCBaseWareId
-// """)
-// sqldf.createOrReplaceTempView("md_sku_info") 
-
-// COMMAND ----------
-
-// val sqldf = spark.sql("""
-
-// select 
-// calendar_yearweek ,  customer_planning_group, format,  lead_sku,  active_address, activation_code, plant, sum(uplift_hl) uplift_hl
-
-// from (
-
-// select 
-// pdah.WeekId calendar_yearweek , if(isnull(client_info.RKAName) or client_info.RKAName = "\\N" , pdah.Client_name, client_info.RKAName) customer_planning_group, 
-
-// /*
-// if (
-// if(isnull(client_info.RKAName) or client_info.RKAName = "\\N" , pdah.Client_name, client_info.RKAName) = 'X5 Retail Group' or 
-// if(isnull(client_info.RKAName) or client_info.RKAName = "\\N" , pdah.Client_name, client_info.RKAName) = 'Магнит (Тандер)' ,  
-//   if(client_info.New2 = 'СМ/ГМ', 'Супермаркет', if(isnull(client_info.New2) or client_info.New2 = "\\N", 'Минимаркет', client_info.New2 )) , 
-//   if(isnull(cpgf.format) or cpgf.format = "\\N" or cpgf.format = 'Локальные клиенты' , 'LKA', if (right(cpgf.format,1) = 'ы', replace(cpgf.format,right(cpgf.format,1), '' ), cpgf.format ) )
-//   ) format,
-// */
-
-//   if (
-//     if(isnull(client_info.RKAName) or client_info.RKAName = "\\N" , pdah.Client_name, client_info.RKAName) = 'X5 Retail Group' or 
-//     if(isnull(client_info.RKAName) or client_info.RKAName = "\\N" , pdah.Client_name, client_info.RKAName) = 'Магнит (Тандер)' ,  
-//   --if( pdah.Format_TT = '' or isnull(pdah.Format_TT) or pdah.Format_TT = "\\N" or pdah.Format_TT= '(пусто)', 'Минимаркет', pdah.Format_TT ) , 
-//     if( (pdah.Format_TT <> 'Гипермаркет'  and pdah.Format_TT <> 'Супермаркет') or pdah.Format_TT is null, 'Минимаркет', pdah.Format_TT), 
-//     if(isnull(cpgf.format) or cpgf.format = "\\N" or cpgf.format = 'Локальные клиенты' , 'LKA', if (right(cpgf.format,1) = 'ы', replace(cpgf.format,right(cpgf.format,1), '' ), cpgf.format ) )
-//   ) format,
-  
-//   md_sku_info.Lead_SKU_ID lead_sku, 
-//   act_info.ActiveAdress active_address,
-//   pdah.ActivationID activation_code,
-//   plant_id_info.Plant_ID plant,
-  
-//   round(
-//   sum(
-//   if(isnull(pdah.Promo_week) or pdah.Promo_week = "\\N", 0, pdah.Promo_week)  + 
-//   if(isnull(pdah.BL_week) or pdah.BL_week = "\\N", 0 , pdah.BL_week) 
-//   ) /10
-//   ,5) uplift_hl
-  
-// from  promoDSD_info pdah 
-// --left join Calendar cl on pdah.week_forecast = cl.DayName
-// left join (select  Client /*, New2*/, RKAName from MD_Clients group by Client, RKAName /*, New2*/) client_info on pdah.Client_name = client_info.Client
-// left join CPG_Formats cpgf on if(isnull(client_info.RKAName) , pdah.Client_name, client_info.RKAName) = cpgf.CPG
-// left join md_sku_info on md_sku_info.FCBaseWareName = pdah.SKU_name
-
-// left join 
-// (
-//   select ActiveAdress, SGP_Before
-//   from (
-//   select ba.ActiveAdress, ba.SGP_Before,  row_number() over ( partition by  ba.SGP_Before order by  sum (s.total_shipments_volume_hl) desc) row_num
-//   from SGP_B_A_ActiveAddress ba left join Sell_in_RU_p2_with_formats s on s.plant_name = ba.ActiveAdress
-//   group by  ba.SGP_Before, ba.ActiveAdress
-//   ) tab 
-//   where 
-//   tab.row_num = 1
-// ) act_info
-// on  pdah.SGP =  act_info.SGP_Before 
-
-// left join plant_id_info on act_info.ActiveAdress = plant_id_info.ActiveAdress
-
-// group by pdah.WeekId, pdah.Client_name, client_info.RKAName, /*client_info.New2,*/  pdah.Format_TT,  cpgf.format, md_sku_info.Lead_SKU_ID, act_info.ActiveAdress, pdah.ActivationID, plant_id_info.Plant_ID
-// ) tab
-
-// group by calendar_yearweek ,  customer_planning_group, format,  lead_sku,  active_address, activation_code, plant
-
-
-// """)
-// sqldf.createOrReplaceTempView("future_uplift")
-
-// COMMAND ----------
-
-//result export
-
-// COMMAND ----------
-
-import com.databricks.WorkflowException
-import java.io.FileNotFoundException
-
-var Result = "Failure"   
-
-try {
-val sqldf = spark.sql(
-  """
+val query_full = """
   select * from promo_main_info
   union 
   select * 
@@ -1065,8 +931,27 @@ val sqldf = spark.sql(
   )
   
   """
-  )
-sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
+
+// COMMAND ----------
+
+val sqldf_full = spark.sql(query_full)
+
+// COMMAND ----------
+
+//result export to ETL\Result
+
+// COMMAND ----------
+
+def exportToBlobStorage_Baltika: String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
+
+var Result = "Failure"   
+
+try {
+
+sqldf_full.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
 
 val name : String = "part-00000"  
 val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
@@ -1080,61 +965,106 @@ catch {
   case e:FileNotFoundException => println("Error, " + e)
   case e:WorkflowException  => println("Error, " + e)
 }
+  
+  Result
+  
+}
+
+//dbutils.notebook.exit(Result)
+
+
+
+// COMMAND ----------
+
+//export to CAP
+
+// COMMAND ----------
+
+val query_incremental = s"""
+select calendar_yearmonth as partition_name, *
+from (
+  select * from promo_main_info
+  union 
+  select * 
+  from 
+  (
+  select tab1.*
+  from future_uplift tab1 left join future_uplift_filter tab2 on 
+  tab1.calendar_yearweek = tab2.calendar_yearweek and 
+  tab1.customer_planning_group = tab2.customer_planning_group and 
+  tab1.format = tab2.format and 
+  tab1.lead_sku = tab2.lead_sku and 
+  tab1.active_address = tab2.active_address and 
+  tab1.activation_code = tab2.activation_code 
+  where tab2.check  is null
+  )
+) tab  
+""" + 
+{if (type_of_data_extract == 1) 
+ s""" 
+ where calendar_yearmonth >= year(date_add(current_date(),-1 * $num_of_days_before_current_date))*100 + month(date_add(current_date(),-1 * $num_of_days_before_current_date))
+ """ 
+ else ""}
+
+// COMMAND ----------
+
+val sqldf_incremental = spark.sql(query_incremental)
+
+// COMMAND ----------
+
+def exportToBlobStorage (type_of_ETL:Int): String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
+
+var Result = "Failure" 
+val partition_field = "partition_name"
+val export_format = "com.databricks.spark.csv"
+val export_delimiter = Character.toString(7.toChar)
+
+var readPath_ETL = if (type_of_ETL == 0) readPath else if (type_of_ETL == 1) readPath_GBS else null
+var writePath_ETL= if (type_of_ETL == 0) writePath_СAP else if (type_of_ETL == 1) writePath_GBS else null
+
+try {
+  sqldf_incremental
+  .coalesce(1)
+  .write.mode("overwrite")
+  .format(export_format)
+  .option("header", "true")
+  .option("inferSchema", "true")
+  .option("delimiter", export_delimiter)
+  .partitionBy(partition_field)
+  .save(readPath_ETL)
+
+  val name : String = "part-00000"   
+  val path_list : Seq[String] = dbutils.fs.ls(readPath_ETL).map(_.path).filter(_.contains(partition_field))
+
+  for (path <- path_list) {
+   var partition_name = path.replace(readPath_ETL + "/" + partition_field + "=", "").replace("/", "")
+   var file_list : Seq[String] = dbutils.fs.ls(path).map(_.path).filter(_.contains(name)) 
+   var read_name =  if (file_list.length >= 1 ) file_list(0).replace(path + "/", "") 
+   var fname = "PROMODIRECT_" + partition_name + "_RU_DCD"+ ".csv" 
+   dbutils.fs.mv(read_name.toString , writePath_ETL+"/"+fname) 
+    }
+  dbutils.fs.rm(readPath_ETL , recurse = true) 
+  Result = "Success" 
+  } 
+catch {
+    case e:FileNotFoundException => println("Error, " + e)
+    case e:WorkflowException  => println("Error, " + e)
+  }
+
+  Result
+}
+
+
+
+// COMMAND ----------
+
+val Result = 
+if (type_of_ETL == 0) { if ( exportToBlobStorage_Baltika == "Success" && exportToBlobStorage(0) == "Success") "Success"  else "Failure"  }
+else if (type_of_ETL == 1) exportToBlobStorage(1)
+else if (type_of_ETL == 2) { if ( exportToBlobStorage_Baltika == "Success" &&  exportToBlobStorage(0) == "Success" && exportToBlobStorage(1) == "Success") "Success" else "Failure" }
+else "Unexpected parameter"
 
 dbutils.notebook.exit(Result)
-
-
-
-// COMMAND ----------
-
-// val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/Result/Sell_in_Promo_RU_p2_with_formats_All.csv"
-// val file_type = "csv"
-// val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-// df.createOrReplaceTempView("promo")
-
-// COMMAND ----------
-
-// %sql select * from promo where calendar_yearweek = 201946 and lead_sku = 380700 and activation_code = 1020969 and active_address = 'Forecast_G4C 3PL_Тюмень (G4C_прогноз)'
-
-// COMMAND ----------
-
-// %sql select * from promo where calendar_yearweek = 201946 and lead_sku = 380700 and activation_code = 1020969 and active_address = 'Forecast_G4C СГП_Екатеринбург (G4C_прогноз)'
-
-// COMMAND ----------
-
-// %sql select * from future_uplift where calendar_yearweek = 201946 and lead_sku = 380700 and activation_code = 1020969  and active_address = 'Forecast_G4C СГП_Санкт-Петербург (G4C_прогноз)'
-
-
-// COMMAND ----------
-
-// %sql select * from promo_main_info where calendar_yearweek = 201946 and lead_sku = 380700 and activation_code = 1020969  and active_address = 'Forecast_G4C СГП_Санкт-Петербург (G4C_прогноз)'
-
-// COMMAND ----------
-
-// %sql select * from future_uplift_filter where calendar_yearweek = 201946 and lead_sku = 380700 and activation_code = 1020969  and active_address = 'Forecast_G4C СГП_Санкт-Петербург (G4C_прогноз)'
-
-// COMMAND ----------
-
-// %sql select * from uplift_info where calendar_yearweek = 201946 and lead_sku = 380700 and activation_code = 1020969  and active_address = 'Forecast_G4C СГП_Санкт-Петербург (G4C_прогноз)'
-
-
-// COMMAND ----------
-
-// val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/Result/Sell_in_Promo_RU_p2_with_formats_All.csv"
-// val file_type = "csv"
-// val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-// df.createOrReplaceTempView("promo")
-
-// COMMAND ----------
-
-// %sql select * from promo limit 1
-
-// COMMAND ----------
-
-// %sql 
-// select distinct activation_code, discount from promo order by  discount  
-
-// COMMAND ----------
-
-// %sql 
-// select * from Action where ActivationID = 1089797
