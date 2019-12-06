@@ -3,7 +3,7 @@
 
 // COMMAND ----------
 
-val type_of_ETL: Int = 0
+val type_of_ETL: Int = 2
 
 // COMMAND ----------
 
@@ -19,8 +19,8 @@ val type_of_data_extract: Int = 0
 
 // COMMAND ----------
 
-val num_of_days_before_current_date: Int = 365 // 30 number of day before current date  !!!!!INDIRECT DOEST HAVE DF UPDATES !!!
-val num_of_days_after_current_date: Int = 30  // 30 number of day after current date   !!!!!INDIRECT DOEST HAVE DF UPDATES !!!
+val num_of_days_before_current_date: Int = 30
+//val num_of_days_after_current_date: Int = 30   
 
 // COMMAND ----------
 
@@ -362,9 +362,9 @@ sqldf.createOrReplaceTempView("FC_result")
 // COMMAND ----------
 
 val sqldf = spark.sql(""" 
-select WeekId calendar_yearweek ,  lead_sku_code_int lead_sku , Plant_ID plant , client customer_planning_group, sum(w1) `sales_forecast_volume_w-1`, sum(w4) `sales_forecast_volume_w-4`
+select WeekId calendar_yearweek , MonthId calendar_yearmonth, lead_sku_code_int lead_sku , Plant_ID plant , client customer_planning_group, sum(w1) `sales_forecast_volume_w-1`, sum(w4) `sales_forecast_volume_w-4`
 from FC_result 
-group by WeekId,  lead_sku_code_int, Plant_ID, client
+group by WeekId, MonthId, lead_sku_code_int, Plant_ID, client
 """)
 sqldf.createOrReplaceTempView("FC_result_W1_W4")
 
@@ -387,7 +387,7 @@ sqldf.createOrReplaceTempView("FC_result_M3")
 
 // COMMAND ----------
 
-val query = s"""
+val query_full_week = s"""
 select *
 from (
 select  fc.* , sell.total_shipments_volume
@@ -403,30 +403,36 @@ group by calendar_yearweek, lead_sku, plant, customer_planning_group
 on 
 fc.calendar_yearweek = sell.calendar_yearweek and fc.lead_sku = sell.lead_sku and fc.plant = sell.plant and fc.customer_planning_group = sell.customer_planning_group
 
+/*
 where
-  (int(fc.lead_sku) in (select distinct int(SKU_Lead_ID) from Active_SKU_Only)) and
-  (fc.plant in (select distinct Plant_ID from Active_Plant_Only where Plant_ID is not null )) and 
-  (fc.customer_planning_group in (select distinct Client from Active_CPG_Only where Client is not null))
+(int(fc.lead_sku) in (select distinct int(SKU_Lead_ID) from Active_SKU_Only)) and
+(fc.plant in (select distinct Plant_ID from Active_Plant_Only where Plant_ID is not null )) and 
+(fc.customer_planning_group in (select distinct Client from Active_CPG_Only where Client is not null))
+*/
 
 ) tab
-""" +
-{if (type_of_data_extract == 1) 
- s""" 
- where calendar_yearmonth between 
- year(date_add(current_date(),-1 * $num_of_days_before_current_date))*100 + month(date_add(current_date(),-1 * $num_of_days_before_current_date))
- and 
- year(date_add(current_date(),$num_of_days_after_current_date))*100 + month(date_add(current_date(),$num_of_days_after_current_date))
- """ 
- else ""}
+""" 
 
 // COMMAND ----------
 
-val sqldf = spark.sql(query)
+val sqldf_full_week = spark.sql(query_full_week)
 
 // COMMAND ----------
+
+//Export to ETL/Result
+
+// COMMAND ----------
+
+def exportToBlobStorage_Baltika_week: String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
 
 val fname = "fc_acc_week.csv" 
-sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
+var Result = "Failure"   
+
+try {
+sqldf_full_week.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
 
 val name : String = "part-00000"  
 val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
@@ -434,6 +440,108 @@ val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/",
 val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
 dbutils.fs.mv(readPath+"/"+read_name , writePath+"/"+fname)   
 dbutils.fs.rm(readPath , recurse = true) 
+if (row_count > 0) Result = "Success" else println("The file " +writePath+"/"+fname + " is empty !" )
+} 
+catch {
+  case e:FileNotFoundException => println("Error, " + e)
+  case e:WorkflowException  => println("Error, " + e)
+}
+  
+  Result
+
+}
+//dbutils.notebook.exit(Result)
+
+// COMMAND ----------
+
+//Export to CAP
+
+// COMMAND ----------
+
+val query_incremental_week = s"""
+select *
+from (
+select fc.calendar_yearmonth partition_name,  fc.* , sell.total_shipments_volume
+
+from FC_result_W1_W4 fc 
+
+left join 
+(
+select calendar_yearweek, lead_sku, plant, customer_planning_group, sum (total_shipments_volume_hl) total_shipments_volume
+from Sell_in_RU_p2_with_formats 
+group by calendar_yearweek, lead_sku, plant, customer_planning_group
+) sell
+on 
+fc.calendar_yearweek = sell.calendar_yearweek and fc.lead_sku = sell.lead_sku and fc.plant = sell.plant and fc.customer_planning_group = sell.customer_planning_group
+
+/*
+where
+(int(fc.lead_sku) in (select distinct int(SKU_Lead_ID) from Active_SKU_Only)) and
+(fc.plant in (select distinct Plant_ID from Active_Plant_Only where Plant_ID is not null )) and 
+(fc.customer_planning_group in (select distinct Client from Active_CPG_Only where Client is not null))
+*/
+
+) tab
+""" +
+{if (type_of_data_extract == 1) 
+ s""" 
+ where calendar_yearmonth >= year(date_add(current_date(),-1 * $num_of_days_before_current_date))*100 + month(date_add(current_date(),-1 * $num_of_days_before_current_date))
+ 
+ """ 
+ else ""}
+
+// COMMAND ----------
+
+val sqldf_incremental_week = spark.sql(query_incremental_week)
+
+// COMMAND ----------
+
+def exportToBlobStorage_week (type_of_ETL:Int): String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
+
+var Result = "Failure" 
+val partition_field = "partition_name"
+val export_format = "com.databricks.spark.csv"
+val export_delimiter = Character.toString(7.toChar)
+
+var readPath_ETL = if (type_of_ETL == 0) readPath else if (type_of_ETL == 1) readPath_GBS else null
+var writePath_ETL= if (type_of_ETL == 0) writePath_СAP else if (type_of_ETL == 1) writePath_GBS else null
+
+try {
+  sqldf_incremental_week
+  .coalesce(1)
+  .write.mode("overwrite")
+  .format(export_format)
+  .option("header", "true")
+  .option("inferSchema", "true")
+  .option("delimiter", export_delimiter)
+  .partitionBy(partition_field)
+  .save(readPath_ETL)
+
+  val name : String = "part-00000"   
+  val path_list : Seq[String] = dbutils.fs.ls(readPath_ETL).map(_.path).filter(_.contains(partition_field))
+
+  for (path <- path_list) {
+   var partition_name = path.replace(readPath_ETL + "/" + partition_field + "=", "").replace("/", "")
+   var file_list : Seq[String] = dbutils.fs.ls(path).map(_.path).filter(_.contains(name)) 
+   var read_name =  if (file_list.length >= 1 ) file_list(0).replace(path + "/", "") 
+   var fname = "FCACCWEEKDIRECT_" + partition_name + "_RU_DCD"+ ".csv" 
+   dbutils.fs.mv(read_name.toString , writePath_ETL+"/"+fname) 
+    }
+  dbutils.fs.rm(readPath_ETL , recurse = true) 
+  Result = "Success" 
+  } 
+catch {
+    case e:FileNotFoundException => println("Error, " + e)
+    case e:WorkflowException  => println("Error, " + e)
+  }
+
+  Result
+}
+
+
 
 // COMMAND ----------
 
@@ -441,7 +549,7 @@ dbutils.fs.rm(readPath , recurse = true)
 
 // COMMAND ----------
 
-val query = s"""
+val query_full_month = s"""
 select * 
 from( 
 select  fc.*, sell.actual_sales_volume 
@@ -457,31 +565,37 @@ group by calendar_yearmonth,calendar_yearweek, lead_sku, plant, customer_plannin
 on 
 fc.calendar_yearmonth = sell.calendar_yearmonth and fc.calendar_yearweek = sell.calendar_yearweek and fc.lead_sku = sell.lead_sku and fc.plant = sell.plant and fc.customer_planning_group = sell.customer_planning_group
 
+/*
 where
   (int(fc.lead_sku) in (select distinct int(SKU_Lead_ID) from Active_SKU_Only)) and
   (fc.plant in (select distinct Plant_ID from Active_Plant_Only where Plant_ID is not null )) and 
   (fc.customer_planning_group in (select distinct Client from Active_CPG_Only where Client is not null))
+*/  
 
 ) tab 
 
-""" +
-{if (type_of_data_extract == 1) 
- s""" 
- where calendar_yearmonth between 
- year(date_add(current_date(),-1 * $num_of_days_before_current_date))*100 + month(date_add(current_date(),-1 * $num_of_days_before_current_date))
- and 
- year(date_add(current_date(),$num_of_days_after_current_date))*100 + month(date_add(current_date(),$num_of_days_after_current_date))
- """ 
- else ""}
+""" 
 
 // COMMAND ----------
 
-val sqldf = spark.sql(query)
+val sqldf_full_month = spark.sql(query_full_month)
 
 // COMMAND ----------
+
+//Export to ETL/Result
+
+// COMMAND ----------
+
+def exportToBlobStorage_Baltika_month: String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
 
 val fname = "fc_acc_month.csv" 
-sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
+var Result = "Failure"   
+
+try {
+sqldf_full_month.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
 
 val name : String = "part-00000"  
 val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
@@ -489,160 +603,111 @@ val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/",
 val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
 dbutils.fs.mv(readPath+"/"+read_name , writePath+"/"+fname)   
 dbutils.fs.rm(readPath , recurse = true) 
+if (row_count > 0) Result = "Success" else println("The file " +writePath+"/"+fname + " is empty !" )
+} 
+catch {
+  case e:FileNotFoundException => println("Error, " + e)
+  case e:WorkflowException  => println("Error, " + e)
+}
+  
+  Result
+
+}
+//dbutils.notebook.exit(Result)
 
 // COMMAND ----------
 
+val query_incremental_month  = s"""
+select * 
+from( 
+select fc.calendar_yearmonth partition_name,  fc.*, sell.actual_sales_volume 
+
+from FC_result_M3 fc 
+
+left join 
+(
+select calendar_yearmonth,calendar_yearweek, lead_sku, plant, customer_planning_group, sum (total_shipments_volume_hl) actual_sales_volume
+from Sell_in_RU_p2_with_formats 
+group by calendar_yearmonth,calendar_yearweek, lead_sku, plant, customer_planning_group
+) sell 
+on 
+fc.calendar_yearmonth = sell.calendar_yearmonth and fc.calendar_yearweek = sell.calendar_yearweek and fc.lead_sku = sell.lead_sku and fc.plant = sell.plant and fc.customer_planning_group = sell.customer_planning_group
+
+/*
+where
+  (int(fc.lead_sku) in (select distinct int(SKU_Lead_ID) from Active_SKU_Only)) and
+  (fc.plant in (select distinct Plant_ID from Active_Plant_Only where Plant_ID is not null )) and 
+  (fc.customer_planning_group in (select distinct Client from Active_CPG_Only where Client is not null))
+*/  
+
+) tab 
+
+""" +
+{if (type_of_data_extract == 1) 
+ s""" 
+ where calendar_yearmonth >= year(date_add(current_date(),-1 * $num_of_days_before_current_date))*100 + month(date_add(current_date(),-1 * $num_of_days_before_current_date))
+ """ 
+ else ""}
+
+// COMMAND ----------
+
+val sqldf_incremental_month = spark.sql(query_incremental_month)
+
+// COMMAND ----------
+
+def exportToBlobStorage_month (type_of_ETL:Int): String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
+
+var Result = "Failure" 
+val partition_field = "partition_name"
+val export_format = "com.databricks.spark.csv"
+val export_delimiter = Character.toString(7.toChar)
+
+var readPath_ETL = if (type_of_ETL == 0) readPath else if (type_of_ETL == 1) readPath_GBS else null
+var writePath_ETL= if (type_of_ETL == 0) writePath_СAP else if (type_of_ETL == 1) writePath_GBS else null
+
+try {
+  sqldf_incremental_month
+  .coalesce(1)
+  .write.mode("overwrite")
+  .format(export_format)
+  .option("header", "true")
+  .option("inferSchema", "true")
+  .option("delimiter", export_delimiter)
+  .partitionBy(partition_field)
+  .save(readPath_ETL)
+
+  val name : String = "part-00000"   
+  val path_list : Seq[String] = dbutils.fs.ls(readPath_ETL).map(_.path).filter(_.contains(partition_field))
+
+  for (path <- path_list) {
+   var partition_name = path.replace(readPath_ETL + "/" + partition_field + "=", "").replace("/", "")
+   var file_list : Seq[String] = dbutils.fs.ls(path).map(_.path).filter(_.contains(name)) 
+   var read_name =  if (file_list.length >= 1 ) file_list(0).replace(path + "/", "") 
+   var fname = "FCACCMONTHDIRECT_" + partition_name + "_RU_DCD"+ ".csv" 
+   dbutils.fs.mv(read_name.toString , writePath_ETL+"/"+fname) 
+    }
+  dbutils.fs.rm(readPath_ETL , recurse = true) 
+  Result = "Success" 
+  } 
+catch {
+    case e:FileNotFoundException => println("Error, " + e)
+    case e:WorkflowException  => println("Error, " + e)
+  }
+
+  Result
+}
+
 
 
 // COMMAND ----------
 
-val file_location = writePath  +"/" +  "HFA_RU_All.csv"
-val file_type = "csv"
-val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-df.createOrReplaceTempView("hfa")
+val Result = 
+if (type_of_ETL == 0) { if ( exportToBlobStorage_Baltika_week == "Success"  && exportToBlobStorage_Baltika_month == "Success" && exportToBlobStorage_week(0) == "Success"  && exportToBlobStorage_month(0) == "Success") "Success" else "Failure"  }
+else if (type_of_ETL == 1) { if (exportToBlobStorage_week(1) == "Success"  && exportToBlobStorage_month(1) == "Success" ) "Success" else  "Failure"}
+else if (type_of_ETL == 2) { if ( exportToBlobStorage_Baltika_week == "Success"  && exportToBlobStorage_Baltika_month == "Success" && exportToBlobStorage_week(0) == "Success"  && exportToBlobStorage_month(0) == "Success" && exportToBlobStorage_week(1) == "Success"  && exportToBlobStorage_month(1) == "Success") "Success" else "Failure" }
+else "Unexpected parameter"
 
-// COMMAND ----------
-
-val file_location = writePath  +"/" +  "HFA_RU_All_02102019.csv"
-val file_type = "csv"
-val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-df.createOrReplaceTempView("hfa_0210")
-
-// COMMAND ----------
-
-val file_location = writePath  +"/" +  "fc_acc_week.csv"
-val file_type = "csv"
-val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-df.createOrReplaceTempView("fc_acc_week")
-
-// COMMAND ----------
-
-// MAGIC %sql select distinct division from hfa --limit 1
-
-// COMMAND ----------
-
-val file_location = file_location_path +"Division.csv"
-val file_type = "csv"
-val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-df.createOrReplaceTempView("Divisions")
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select WH from Divisions where Division = '\\N'
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select calendar_yearweek, lead_sku, plant, customer_planning_group,  total_shipments_volume,  total_shipments
-// MAGIC from hfa 
-// MAGIC where calendar_yearweek = 201940 and lead_sku = 510811 and plant = 'R56' and customer_planning_group=  'X5 Retail Group'
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select distinct calendar_yearweek, lead_sku, plant, customer_planning_group,  total_shipments_volume,  total_shipments
-// MAGIC from hfa_0210 
-// MAGIC where calendar_yearweek = 201940 and lead_sku = 510811 and plant = 'R56' and customer_planning_group=  'X5 Retail Group'
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select calendar_yearweek, lead_sku, plant, customer_planning_group, total_shipments_volume
-// MAGIC from fc_acc_week 
-// MAGIC where calendar_yearweek = 201940 and lead_sku = 510811 and plant = 'R56' and customer_planning_group=  'X5 Retail Group'
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select * from fc_acc_week where plant is null
-
-// COMMAND ----------
-
-
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select *
-// MAGIC from hfa 
-// MAGIC where calendar_yearweek = 201941 and lead_sku = 7710 and plant = 'R63' and customer_planning_group=  'METRO'
-
-// COMMAND ----------
-
-val file_location = writePath  +"/" +  "open_orders_etl_tuesday_with_format_All.csv"
-val file_type = "csv"
-val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-df.createOrReplaceTempView("oo")
-
-// COMMAND ----------
-
-val file_location = writePath  +"/" +  "HFA_RU_All.csv"
-val file_type = "csv"
-val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-df.createOrReplaceTempView("hfa")
-
-// COMMAND ----------
-
-val file_location = writePath  +"/" +  "HFA_RU_All_201940.csv"
-val file_type = "csv"
-val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-df.createOrReplaceTempView("hfa_201940")
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select *
-// MAGIC from oo 
-// MAGIC where calendar_yearweek = 201941 and lead_sku = 510610 and plant = 'R29' and customer_planning_group=  'METRO'
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select *
-// MAGIC from hfa_201940 
-// MAGIC where calendar_yearweek = 201941 and lead_sku = 510610 and plant = 'R29' and customer_planning_group=  'METRO'
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select *
-// MAGIC from hfa
-// MAGIC where calendar_yearweek = 201935 and lead_sku = 510700 and plant = 'R53' and customer_planning_group=  'X5 Retail Group'
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select * 
-// MAGIC from Sell_in_RU_p2_with_formats
-// MAGIC where calendar_yearweek = 201935 and lead_sku = 510700 and plant = 'R53' and customer_planning_group=  'X5 Retail Group'
-
-// COMMAND ----------
-
-// MAGIC %sql 
-// MAGIC select s.SKU_Lead_ID, cl.ActiveAdress, d.Division, plant_id_info.Plant_ID, sum(o.Actual_Volume) Actual_Volume,  sum(o.Actual_Volume/10) Actual_Volume_hl
-// MAGIC from orders_wpromo o 
-// MAGIC left join Calendar c on o.Date = c.DayName
-// MAGIC left join md_sku s on cast(replace(o.SKUID, left(o.SKUID, 1), '') as int) = cast(s.SKU_ID as int)
-// MAGIC left join md_clients cl on o.AdressID =cl.AdressCode
-// MAGIC left join divisions d on cl.ActiveAdress = d.WH
-// MAGIC left join plant_id_info on cl.ActiveAdress = plant_id_info.ActiveAdress
-// MAGIC 
-// MAGIC where s.SKU_Lead_ID in(510700, 51070074) and o.Client = 'X5 Retail Group' and o.AdressID in ('29562417', '29566514') and c.WeekId = 201935
-// MAGIC group by s.SKU_Lead_ID,  cl.ActiveAdress, d.Division, plant_id_info.Plant_ID
-
-// COMMAND ----------
-
-// MAGIC %sql select * from divisions limit 1
-
-// COMMAND ----------
-
-// MAGIC %sql select * from orders_wpromo where SKUID like '=51070074' limit 1
-
-// COMMAND ----------
-
-// MAGIC %sql select * from calendar limit 1
-
-// COMMAND ----------
-
-// MAGIC %sql select * from MD_Clients where activeadress = 'Forecast_G4C СГП_Новосибирск (G4C_прогноз)' and Client = 'X5 Retail Group'
+dbutils.notebook.exit(Result)
