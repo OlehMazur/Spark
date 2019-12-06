@@ -3,7 +3,7 @@
 
 // COMMAND ----------
 
-val type_of_ETL: Int = 0
+val type_of_ETL: Int = 2
 
 // COMMAND ----------
 
@@ -19,8 +19,8 @@ val type_of_data_extract: Int = 0
 
 // COMMAND ----------
 
-val num_of_days_before_current_date: Int = 90 // 30 number of day before current date  !!!!!INDIRECT DOEST HAVE DF UPDATES !!!
-val num_of_days_after_current_date: Int = 30  // 30 number of day after current date   !!!!!INDIRECT DOEST HAVE DF UPDATES !!!
+val num_of_days_before_current_date: Int = 30
+//val num_of_days_after_current_date: Int = 30  
 
 // COMMAND ----------
 
@@ -88,7 +88,7 @@ df.createOrReplaceTempView("IndirectSales")
 
 // COMMAND ----------
 
-//  %sql select max(Date) max_date from IndirectSales where Date is not null or Date <> "\\N" ----2019-09-29T00:00:00.000+0000
+// %sql select max(Date) max_date from IndirectSales where Date is not null or Date <> "\\N" ----2019-11-19T00:00:00.000+0000
 
 
 // COMMAND ----------
@@ -101,7 +101,25 @@ df.createOrReplaceTempView("IndirectSales")
 
 // COMMAND ----------
 
-val numbers_of_weeks_back: Int = 0
+val query_get_numbers_of_weeks_back = """
+select 
+int(
+(select distinct Weekid from Calendar where DayName = cast(current_date() as timestamp) ) - 
+(select distinct Weekid from Calendar where DayName = (select max(Date) max_date from IndirectSales where Date is not null or Date <> "\\N" ) ) ) as numbers_of_weeks_back
+"""
+
+// COMMAND ----------
+
+val df_gnwb = spark.sql(query_get_numbers_of_weeks_back)
+
+// COMMAND ----------
+
+val numbers_of_weeks_back = df_gnwb.first.getInt(0)
+//val res_df_gnwb_res = res_df_gnwb(0).toString().replace("[", "").replace("]", "").toInt
+
+// COMMAND ----------
+
+//val numbers_of_weeks_back: Int = 0
 
 // COMMAND ----------
 
@@ -365,7 +383,7 @@ sqldf.createOrReplaceTempView("key_info_with_week")
 
 // COMMAND ----------
 
-val query = s"""
+val query_full = s"""
 
 select *
 from (
@@ -411,27 +429,19 @@ null volume_hl
 from 
 key_info_with_week
 
-""" +
-{if (type_of_data_extract == 1) 
- s""" 
- where calendar_yearmonth between 
- year(date_add(current_date(),-1 * $num_of_days_before_current_date))*100 + month(date_add(current_date(),-1 * $num_of_days_before_current_date))
- and 
- year(date_add(current_date(),$num_of_days_after_current_date))*100 + month(date_add(current_date(),$num_of_days_after_current_date))
- """ 
- else ""}
+""" 
 
 // COMMAND ----------
 
-//result export
+val sqldf_full = spark.sql(query_full)
 
 // COMMAND ----------
 
-val sqldf = spark.sql(query)
+//Export to ETL\Result
 
 // COMMAND ----------
 
-def exportToBlobStorage (type_of_ETL:Int): String = { 
+def exportToBlobStorage_hole_file_Baltika : String = { 
 
 import com.databricks.WorkflowException
 import java.io.FileNotFoundException
@@ -441,66 +451,11 @@ val partition_field = "partition_name"
 val export_format = "com.databricks.spark.csv"
 val export_delimiter = ";"
 
-var readPath_ETL = if (type_of_ETL == 0) readPath else if (type_of_ETL == 1) readPath_GBS else null
-var writePath_ETL= if (type_of_ETL == 0) writePath else if (type_of_ETL == 1) writePath_GBS else null
+var readPath_ETL =  readPath 
+var writePath_ETL=  writePath 
 
 try {
-  sqldf
-  .coalesce(1)
-  .write.mode("overwrite")
-  .format(export_format)
-  .option("header", "true")
-  .option("inferSchema", "true")
-  .option("delimiter", export_delimiter)
-  //.option("encoding", "cp1251")
-  .partitionBy(partition_field)
-  .save(readPath_ETL)
-
-  val name : String = "part-00000"   
-  val path_list : Seq[String] = dbutils.fs.ls(readPath_ETL).map(_.path).filter(_.contains(partition_field))
-
-  for (path <- path_list) {
-   var partition_name = path.replace(readPath_ETL + "/" + partition_field + "=", "").replace("/", "")
-   var file_list : Seq[String] = dbutils.fs.ls(path).map(_.path).filter(_.contains(name)) 
-   var read_name =  if (file_list.length >= 1 ) file_list(0).replace(path + "/", "") 
-  // var fname = "Indirect_RU_cp1251_" + partition_name + ".csv" 
-   var fname = "Indirect_RU_" + partition_name + ".csv"
-   dbutils.fs.mv(read_name.toString , writePath_ETL+"/"+fname) 
-    }
-  dbutils.fs.rm(readPath_ETL , recurse = true) 
-  Result = "Success" 
-  } 
-catch {
-    case e:FileNotFoundException => println("Error, " + e)
-    case e:WorkflowException  => println("Error, " + e)
-  }
-
-  Result
-}
-
-
-
-// COMMAND ----------
-
-//hole file 
-
-// COMMAND ----------
-
-def exportToBlobStorage_hole_file (type_of_ETL:Int): String = { 
-
-import com.databricks.WorkflowException
-import java.io.FileNotFoundException
-
-var Result = "Failure" 
-val partition_field = "partition_name"
-val export_format = "com.databricks.spark.csv"
-val export_delimiter = ";"
-
-var readPath_ETL = if (type_of_ETL == 0) readPath else if (type_of_ETL == 1) readPath_GBS else null
-var writePath_ETL= if (type_of_ETL == 0) writePath else if (type_of_ETL == 1) writePath_GBS else null
-
-try {
-  sqldf
+  sqldf_full
   .coalesce(1)
   .write.mode("overwrite")
   .format(export_format)
@@ -532,81 +487,124 @@ catch {
 
 // COMMAND ----------
 
-// val Result = 
-// if (type_of_ETL == 0) exportToBlobStorage(0) 
-// else if (type_of_ETL == 1) exportToBlobStorage(1)
-// else if (type_of_ETL == 2) {exportToBlobStorage(0); exportToBlobStorage(1) }
-// else "Unexpected parameter"
+//Export tp CAP
 
-// //dbutils.notebook.exit(Result)
+// COMMAND ----------
+
+val query_incremental = s"""
+select *
+from (
+select *
+from (
+select  
+cl.MonthId as partition_name, 
+s.Distr_Client as distr_client,
+--replace (replace(s.Distr_Client, '  ', ' '), '"' , '') distr_client , 
+--replace (concat(s.OP,' ', s.Distributor,' ',  s.Sub_channel ), '"' , '') distr_client,
+replace (s.OP, '"' , '') OP,  
+replace (s.Distributor, '"' , '') distributor, 
+--replace (s.Client, '"' , '') client,
+s.Sub_channel sub_channel, 
+s.PGO , 
+cast( if(left(s.Lead_SKUID, 1) = "=", replace(s.Lead_SKUID, left(s.Lead_SKUID, 1), ''), s.Lead_SKUID) as double) lead_sku  , 
+cl.WeekId calendar_yearweek, 
+cl.MonthId calendar_yearmonth, 
+sum(s.Volume_dal)/10 volume_hl
+
+from IndirectSales s 
+left join Calendar cl on s.Date = cl.DayName 
+
+where cl.WeekId >= 201601 
+--and int(if(left(s.Lead_SKUID, 1) = "=", replace(s.Lead_SKUID, left(s.Lead_SKUID, 1), ''), s.Lead_SKUID)) in (select int(SKU_Lead_ID) from  Active_SKU_Only)
+
+group by  s.Distr_Client,  s.PGO, s.Lead_SKUID, cl.WeekId, cl.MonthId, s.OP, s.Distributor, s.Sub_channel/*, s.Client*/ 
+) tab
+
+union 
+
+select 
+calendar_yearmonth as partition_name, 
+Distr_Client as distr_client,
+--replace (replace(Distr_Client, '  ', ' '), '"' , '') distr_client , 
+--replace (concat(OP,' ', distributor,' ',  sub_channel ), '"' , '') distr_client,
+replace (OP, '"' , '') OP, 
+replace (distributor, '"' , '') distributor, 
+sub_channel,
+PGO,
+cast( if(left(Lead_SKUID, 1) = "=", replace(Lead_SKUID, left(Lead_SKUID, 1), ''), Lead_SKUID) as double) lead_sku  , 
+calendar_yearweek,
+calendar_yearmonth,
+null volume_hl
+from 
+key_info_with_week
+) tab
+""" +
+{if (type_of_data_extract == 1) 
+ s""" 
+ where calendar_yearmonth >=  year(date_add(current_date(),-1 * $num_of_days_before_current_date))*100 + month(date_add(current_date(),-1 * $num_of_days_before_current_date))
+  
+ """ 
+ else ""}
+
+// COMMAND ----------
+
+val sqldf_incremental = spark.sql(query_incremental)
+
+// COMMAND ----------
+
+def exportToBlobStorage (type_of_ETL:Int): String = { 
+
+import com.databricks.WorkflowException
+import java.io.FileNotFoundException
+
+var Result = "Failure" 
+val partition_field = "partition_name"
+val export_format = "com.databricks.spark.csv"
+val export_delimiter = Character.toString(7.toChar)
+
+var readPath_ETL = if (type_of_ETL == 0) readPath else if (type_of_ETL == 1) readPath_GBS else null
+var writePath_ETL= if (type_of_ETL == 0) writePath_СAP else if (type_of_ETL == 1) writePath_GBS else null
+
+try {
+  sqldf_incremental
+  .coalesce(1)
+  .write.mode("overwrite")
+  .format(export_format)
+  .option("header", "true")
+  .option("inferSchema", "true")
+  .option("delimiter", export_delimiter)
+  .partitionBy(partition_field)
+  .save(readPath_ETL)
+
+  val name : String = "part-00000"   
+  val path_list : Seq[String] = dbutils.fs.ls(readPath_ETL).map(_.path).filter(_.contains(partition_field))
+
+  for (path <- path_list) {
+   var partition_name = path.replace(readPath_ETL + "/" + partition_field + "=", "").replace("/", "")
+   var file_list : Seq[String] = dbutils.fs.ls(path).map(_.path).filter(_.contains(name)) 
+   var read_name =  if (file_list.length >= 1 ) file_list(0).replace(path + "/", "") 
+   var fname = "HFAINDIRECT_" + partition_name + "_RU_DCD"+ ".csv" 
+   dbutils.fs.mv(read_name.toString , writePath_ETL+"/"+fname) 
+    }
+  dbutils.fs.rm(readPath_ETL , recurse = true) 
+  Result = "Success" 
+  } 
+catch {
+    case e:FileNotFoundException => println("Error, " + e)
+    case e:WorkflowException  => println("Error, " + e)
+  }
+
+  Result
+}
+
+
 
 // COMMAND ----------
 
 val Result = 
-if (type_of_ETL == 0) exportToBlobStorage_hole_file(0) 
-else if (type_of_ETL == 1) exportToBlobStorage_hole_file(1)
-else if (type_of_ETL == 2) {exportToBlobStorage_hole_file(0); exportToBlobStorage_hole_file(1) }
+if (type_of_ETL == 0) { if (exportToBlobStorage_hole_file_Baltika == "Success" && exportToBlobStorage(0) == "Success") "Success" else "Failure" }
+else if (type_of_ETL == 1) exportToBlobStorage(1)
+else if (type_of_ETL == 2) { if (exportToBlobStorage_hole_file_Baltika == "Success" && exportToBlobStorage(0) =="Success" && exportToBlobStorage(1) == "Success" ) "Success" else "Failure" }
 else "Unexpected parameter"
 
-//dbutils.notebook.exit(Result)
-
-// COMMAND ----------
-
-
-
-// COMMAND ----------
-
-// val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/Result/Indirect_RU.csv"
-// val file_type = "csv"
-// val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
-// df.createOrReplaceTempView("Indirect_RU")
-
-// COMMAND ----------
-
-// %sql 
-// select *
-// from (
-// select OP, distributor, sub_channel, distr_client, row_number() over (partition by OP, distributor, sub_channel order by distr_client) row_num
-// from Indirect_RU 
-// group by OP, distributor, sub_channel,distr_client
-// ) tab
-// where --distr_client = 119
-// row_num > 1
-
-// COMMAND ----------
-
-// %sql select OP, distributor, sub_channel, distr_client
-// from Indirect_RU 
-// where OP = 'СБП off-trade Тула' and distributor = 'ООО Оптовая Компания Продторг' and sub_channel = 'MT LKA'
-// group by OP, distributor, sub_channel,distr_client
-
-// COMMAND ----------
-
-// %sql select distinct OP, distributor, sub_channel, distr_client, PGO  from IndirectSales where distr_client in (44,119)
-
-// COMMAND ----------
-
-// %sql 
-// select * from Indirect_RU limit 1
-
-// COMMAND ----------
-
-// %sql select count(*) from Indirect_RU --limit 1
-
-// COMMAND ----------
-
-// %sql select count(*) from (select distinct * from Indirect_RU )--limit 1
-
-// COMMAND ----------
-
-// %sql 
-// select distinct lead_sku from IndirectSales where lead_sku not in (Select distinct lead_sku from Indirect_RU )
-
-// COMMAND ----------
-
-// %sql select sum(s.Volume_dal)/10 from IndirectSales s left join  Calendar cl on s.Date = cl.DayName where cl.WeekId >= 201601 
-
-
-// COMMAND ----------
-
-// %sql select sum(volume_hl) from Indirect_RU
+dbutils.notebook.exit(Result)
