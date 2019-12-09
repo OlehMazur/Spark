@@ -3,7 +3,7 @@
 
 // COMMAND ----------
 
-val type_of_ETL: Int = 0
+val type_of_ETL: Int = 1
 
 // COMMAND ----------
 
@@ -11,7 +11,7 @@ val type_of_ETL: Int = 0
 
 // COMMAND ----------
 
-val type_of_data_extract: Int = 0
+val type_of_data_extract: Int = 1
 
 // COMMAND ----------
 
@@ -28,7 +28,7 @@ val num_of_days_before_current_date: Int = 30
 
 // COMMAND ----------
 
-val type_of_scenario: Int = 0
+val type_of_scenario: Int = 1
 
 // COMMAND ----------
 
@@ -638,7 +638,7 @@ catch {
 val Result = 
 if (type_of_ETL == 0) { if (exportToBlobStorage_Baltika_direct == "Success"  && exportToBlobStorage_Baltika_indirect  == "Success" && exportToBlobStorage_direct(0) == "Success" && exportToBlobStorage_indirect(0) == "Success" ) "Success" else "Failure" }
 else if (type_of_ETL == 1)  { if (exportToBlobStorage_direct(1) == "Success" && exportToBlobStorage_indirect(1) == "Success" ) "Success" else "Failure"  }
-else if (type_of_ETL == 2)  { if (exportToBlobStorage_Baltika_direct == "Success"  && exportToBlobStorage_Baltika_indirect  == "Success" && exportToBlobStorage_direct(0) == "Success" && exportToBlobStorage_indirect(0) == "Success" && exportToBlobStorage_direct(1) == "Success" && exportToBlobStorage_indirect(1) == "Success" )}
+else if (type_of_ETL == 2)  { if (exportToBlobStorage_Baltika_direct == "Success"  && exportToBlobStorage_Baltika_indirect  == "Success" && exportToBlobStorage_direct(0) == "Success" && exportToBlobStorage_indirect(0) == "Success" && exportToBlobStorage_direct(1) == "Success" && exportToBlobStorage_indirect(1) == "Success" ) "Success" else "Failure" }
 else "Unexpected parameter"
 
 dbutils.notebook.exit(Result)
