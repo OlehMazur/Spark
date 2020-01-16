@@ -271,12 +271,12 @@ for city in cities_format:
 # COMMAND ----------
 
  #main params
-days_to_skip = 15
+days_to_skip = 25 #15
 message = ""  
 city = dbutils.widgets.get('City')
 year = int(dbutils.widgets.get('Year'))
 readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
-writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/Test/" + "weather_" + city + '_' + str(year)
+writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/Transformation/History/" + "weather_" + city + '_' + str(year)
     
 #forecastio api_key
 api_key = "3ec0bb65bbe4e020bef01d63d53c648c" if dbutils.widgets.get('API_Key') == '' else dbutils.widgets.get('API_Key')
