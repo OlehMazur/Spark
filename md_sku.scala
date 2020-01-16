@@ -1,45 +1,47 @@
 // Databricks notebook source
-//Type of ETL: 0 (only Baltika ) 1 (only CAP) 2 (Both)
+// MAGIC %run /Users/o_mazur@carlsberg.ua/dcd_etl_functions
 
 // COMMAND ----------
 
-val type_of_ETL: Int = 2
+//util variables
 
 // COMMAND ----------
 
-//Configuration (Baltika)
-val storage_account_name = "staeeprodbigdataml2c"
-val storage_account_access_key = "EHYumrwso4XLSUHpvLptI33z7mumiZwZOErjrlP8FiW51Bb6NS2PaWJsqW9hsMttbZizgQjUexFZfZDBQJebYw=="
-spark.conf.set(
-  "fs.azure.account.key."+storage_account_name+".blob.core.windows.net",
-  storage_account_access_key)
-
-// COMMAND ----------
-
-//Configuration (CAP)
-spark.conf.set(
-  "fs.azure.sas.dcd.prdcbwesa01.blob.core.windows.net",
-  "https://prdcbwesa01.blob.core.windows.net/dcd?st=2019-09-13T15%3A01%3A24Z&se=2020-03-14T14%3A01%3A00Z&sp=rwdl&sv=2018-03-28&sr=c&sig=aErgDFXTRr3Lj519B4ZtjDHTp%2F3xsXchFqVuS2IAnGc%3D")
-
-// COMMAND ----------
-
-//constants (Baltika)
-
-// COMMAND ----------
-
-val readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/test_res.csv"
-val writePath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/Result" //ETL/Result //etl_fbkp
-val writePath_СAP = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/export_to_CAP"
+val job = "dcd_notebook_workflow_hfa_All"
+val notebook = "md_sku"
+val notebook_start_time  = LocalDateTime.now
 val fname = "MD_SKU_RU.csv"
+val readPath = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/ETL/tmp/" + job
+val readPath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU/ru_tmp/" +job
 
 // COMMAND ----------
 
-//constants (CAP)
+//Init log DB  
 
 // COMMAND ----------
 
-val writePath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU" 
-val readPath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU/ru_tmp" 
+// MAGIC %sql use etl_info
+
+// COMMAND ----------
+
+//start logging
+
+// COMMAND ----------
+
+save_to_log_first_step(job,notebook)
+
+// COMMAND ----------
+
+//log for parameters 
+
+// COMMAND ----------
+
+save_to_log_parameters_value (job,notebook, "type_of_ETL", type_of_ETL)
+save_to_log_parameters_value (job,notebook, "type_of_data_extract", type_of_data_extract)
+
+// COMMAND ----------
+
+//log for source files
 
 // COMMAND ----------
 
@@ -47,10 +49,33 @@ val readPath_GBS = "wasbs://dcd@prdcbwesa01.blob.core.windows.net/RU/ru_tmp"
 
 // COMMAND ----------
 
-val file_location = "wasbs://prod@staeeprodbigdataml2c.blob.core.windows.net/MD_SKU_TO.csv"
+val start_time = LocalDateTime.now
+
+val is_regularly_updated_table = true
+val source_file_name = "MD_SKU_TO.csv"
+val file_location = source_file_location + source_file_name
 val file_type = "csv"
 val df = spark.read.format(file_type).option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_location)
 df.createOrReplaceTempView("MD_SKU_TO_TV")
+
+save_to_log_file_processing(job,notebook,start_time, df, source_file_name )
+
+//number of rows in the file > 1
+if (df.count == 0) {
+  save_to_log_if_source_is_empty(job,notebook,start_time, source_file_name)
+  save_to_log_last_step(job,notebook,"Failure",notebook_start_time)
+  dbutils.notebook.exit("Failure")  
+  //throw new Exception("the source file is empty")
+}
+
+//if the source file is up todate
+
+if (!get_last_modified_date_for_blob(source_file_name).equals(current_date) && is_logic_changed == 0  && is_regularly_updated_table ) {
+  save_to_log_if_source_is_not_updated(job,notebook,start_time, source_file_name )
+  save_to_log_last_step(job,notebook,"Skipped",notebook_start_time)
+  dbutils.notebook.exit("Skipped")  
+  //throw new Exception("the source file is not up to date")
+}
 
 // COMMAND ----------
 
@@ -187,99 +212,56 @@ left join status_info s on r.lead_sku = s.lead_sku
 
 // COMMAND ----------
 
-//result export to ETL\Result
+//Final testing before result export
 
 // COMMAND ----------
 
-def exportToBlobStorage_Baltika: String = { 
-
- import com.databricks.WorkflowException
- import java.io.FileNotFoundException
-
-  var Result = "Failure"   
-
-  try {
-
-  sqldf.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").option("inferSchema", "true").option("delimiter", ";").save(readPath)
-
-  val name : String = "part-00000"  
-  val file_list : Seq[String] = dbutils.fs.ls(readPath).map(_.path).filter(_.contains(name))
-  val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath + "/", "")
-  val row_count = spark.read.format("csv").option("inferSchema", "true").option("delimiter", ";").option("header", "true").load(file_list(0)).count   
-  dbutils.fs.mv(readPath+"/"+read_name , writePath+"/"+fname)   
-  dbutils.fs.rm(readPath , recurse = true) 
-  if (row_count > 0) Result = "Success" else println("The file " +writePath+"/"+fname + " is empty !" )
-  } 
-  catch {
-    case e:FileNotFoundException => println("Error, " + e)
-    case e:WorkflowException  => println("Error, " + e)
-  }
-
-    Result
-
-  }
-  
-
-//dbutils.notebook.exit(Result)
-
-
+exportToBlobStorage_Baltika_Result_Before_Testing(job,notebook,fname, sqldf, readPath)
 
 // COMMAND ----------
 
-//result export to CAP
+val sqldf_result = load_preliminary_result(fname)
 
 // COMMAND ----------
 
-def exportToBlobStorage (type_of_ETL:Int): String = { 
+save_to_log_start_result_testing(job,notebook)
 
-import com.databricks.WorkflowException
-import java.io.FileNotFoundException
-import java.time.LocalDateTime
+// COMMAND ----------
 
-val current_month = LocalDateTime.now.getYear * 100 + LocalDateTime.now.getMonthValue
-
-var Result = "Failure" 
-val export_format = "com.databricks.spark.csv"
-val export_delimiter = Character.toString(7.toChar)
-
-var readPath_ETL = if (type_of_ETL == 0) readPath else if (type_of_ETL == 1) readPath_GBS else null
-var writePath_ETL= if (type_of_ETL == 0) writePath_СAP else if (type_of_ETL == 1) writePath_GBS else null
-
-try {
-  sqldf
-  .coalesce(1)
-  .write.mode("overwrite")
-  .format(export_format)
-  .option("header", "true")
-  .option("inferSchema", "true")
-  .option("delimiter", export_delimiter)
-  .save(readPath_ETL)
-
-  val name : String = "part-00000"   
-  val file_list : Seq[String] = dbutils.fs.ls(readPath_ETL).map(_.path).filter(_.contains(name))
-  val read_name = if (file_list.length >= 1 ) file_list(0).replace(readPath_ETL + "/", "")
-  //var fname = "SKUSCLEAN_" + current_month.toString + "_RU_DCD"+ ".csv" 
-  var fname = "SKUSCLEAN_" + "RU_DCD"+ ".csv" 
-  dbutils.fs.mv(readPath_ETL+"/"+ read_name , writePath_ETL+"/"+fname)     
-  dbutils.fs.rm(readPath_ETL , recurse = true) 
-  Result = "Success" 
-  } 
-catch {
-    case e:FileNotFoundException => println("Error, " + e)
-    case e:WorkflowException  => println("Error, " + e)
-  }
-
-  Result
+if (Test_Number_of_Rows(job,notebook, sqldf_result, fname) == "FAILED") {
+  save_to_log_last_step(job,notebook,"Failure",notebook_start_time)
+  dbutils.notebook.exit("Failure")    
 }
 
+// COMMAND ----------
 
+if (Test_Missing_Filed(job, notebook, sqldf_result, "lead_sku", fname ) == "FAILED" ) {
+  save_to_log_last_step(job,notebook,"Failure",notebook_start_time)
+  dbutils.notebook.exit("Failure")  
+}
+
+// COMMAND ----------
+
+//end Final testing before result export
 
 // COMMAND ----------
 
 val Result = 
-if (type_of_ETL == 0) {if (exportToBlobStorage_Baltika == "Success" && exportToBlobStorage(0) == "Success") "Success" else "Failure"  }
-else if (type_of_ETL == 1) exportToBlobStorage(1)
-else if (type_of_ETL == 2) { if (exportToBlobStorage_Baltika == "Success" && exportToBlobStorage(0) == "Success" && exportToBlobStorage(1) == "Success") "Success" else "Failure" }
+if (type_of_ETL == 0) { 
+  if (exportToBlobStorage_Baltika (job,notebook,fname, sqldf, readPath ) == "Success" &&      
+      exportToBlobStorage_CAP_hole_file (job,notebook,0, sqldf, "SKUSCLEAN" , readPath, readPath_GBS) == "Success" 
+      )  "Success" else "Failure"  }
+else if (type_of_ETL == 1) { 
+  if (exportToBlobStorage_CAP_hole_file (job,notebook,1, sqldf, "SKUSCLEAN" , readPath, readPath_GBS) == "Success"
+     ) "Success" else  "Failure"  }
+else if (type_of_ETL == 2) { 
+  if (exportToBlobStorage_Baltika (job,notebook,fname, sqldf, readPath  ) == "Success" && 
+      exportToBlobStorage_CAP_hole_file (job,notebook,1, sqldf, "SKUSCLEAN" , readPath, readPath_GBS ) == "Success"  
+     ) "Success" else "Failure" }
 else "Unexpected parameter"
+
+
+//save to log
+save_to_log_last_step(job,notebook,Result,notebook_start_time)
 
 dbutils.notebook.exit(Result)
