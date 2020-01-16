@@ -52,7 +52,7 @@ start = datetime.datetime(year, 1, 1)
 for offset in range(0, days_in_year):
      date = start+datetime.timedelta(offset)
      forecast = forecastio.load_forecast(api_key, lat, lng, time=date).daily().data
-     if len(forecast) > 0:
+     if (len(forecast) > 0) :
          data.append(forecast[0].d)
          
 t2=time.time()  
