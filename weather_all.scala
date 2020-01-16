@@ -337,6 +337,22 @@ result_df.createOrReplaceTempView("main")
 
 // COMMAND ----------
 
+val num_of_week_left_query = "select int(max(cl.weekid) - t.WeekId) num_of_week_left from main m left join  calendar cl on cast(m.date as timestamp)  = cl.DayName cross join till_week_info t group by  t.WeekId"
+
+// COMMAND ----------
+
+val num_of_week_left_before_new_extraction = spark.sql(num_of_week_left_query).first.getInt(0)
+
+// COMMAND ----------
+
+get_weather_extraction_info (job, notebook, num_of_week_left_before_new_extraction )
+
+// COMMAND ----------
+
+sendEmail_forAdmin("Weather data extraction", num_of_week_left_before_new_extraction.toString() + " weeks left before the new extraction ")
+
+// COMMAND ----------
+
 val sql_query_direct = """
 select 
 distinct cl.MonthId partition_name,  m.city, c.plant, cl.weekid calendar_yearweek, /*date time,*/ date_add(cast(date as date),1 ) time,   m.apparentTemperatureMax, m.cloudCover, m.humidity, m.windSpeed
