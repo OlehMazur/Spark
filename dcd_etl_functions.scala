@@ -16,7 +16,7 @@ val is_logic_changed = 0 // the parameter should be set to 1 if some logic was c
 
 // COMMAND ----------
 
-val send_email_or_not = 1 // send an email after job has finished its run: 1 - yes, 0 - no
+val send_email_or_not = 0 // send an email after job has finished its run: 1 - yes, 0 - no
 
 // COMMAND ----------
 
@@ -689,3 +689,39 @@ def sendEmail(mailSubject: String, mailContent: String) = {
     transport.connect(host, username, password)
     transport.sendMessage(message, message.getAllRecipients)
 }
+
+// COMMAND ----------
+
+def sendEmail_forAdmin(mailSubject: String, mailContent: String) = {
+    val properties = new Properties()
+    properties.put("mail.smtp.port", port)
+    properties.put("mail.smtp.auth", "true")
+    properties.put("mail.smtp.starttls.enable", "true")
+
+    val session = Session.getDefaultInstance(properties, null)
+    val message = new MimeMessage(session)
+    
+    message.addRecipient(Message.RecipientType.TO, new InternetAddress("Oleg.Mazur@carlsberg.ua"))  
+  
+    message.setSubject(mailSubject)
+    message.setContent(mailContent, "text/html")
+
+    val transport = session.getTransport("smtp")
+    transport.connect(host, username, password)
+    transport.sendMessage(message, message.getAllRecipients)
+}
+
+// COMMAND ----------
+
+def get_weather_extraction_info (job: String, notebook:String, num_of_weeks_to_new_extraction: Int ) {
+  val event =  num_of_weeks_to_new_extraction.toString() + " weeks left before the new extraction "
+  val start_time =  LocalDateTime.now
+  val end_time = LocalDateTime.now
+  val duration = start_time.until(end_time, time_measure)
+  val notebook_status = "running"
+  val count_of_records = 0L
+  val file_name = ""
+  val last_modified_date =""
+  val log_message = s"insert into " + job + $" values ('$event','$job', '$notebook', '$start_time', '$end_time', $duration, '$notebook_status', $count_of_records, '$file_name', '$last_modified_date'  )"
+  spark.sql(log_message)
+} 
